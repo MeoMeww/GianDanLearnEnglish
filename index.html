@@ -96,6 +96,11 @@ details{margin-top:8px}
 .missed .w{font-family:var(--font-mono)}
 .missed .w.bad{color:var(--bad);text-decoration:line-through}
 .missed .w.ok{color:var(--ok)}
+.lib{display:grid;gap:8px;margin-top:12px}
+.lib .item{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 12px;border-radius:10px;background:var(--surface-2)}
+.lib .item>div{min-width:0}
+.lib .title{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib .item button{padding:6px 12px}
 kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);border-radius:5px;padding:1px 5px;background:var(--surface-2)}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 @media (max-width:480px){.sentence{font-size:1.2rem}.score-big{font-size:3rem}}
@@ -135,6 +140,18 @@ kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);b
         <button type="button" id="manualBtn" class="primary">Bắt đầu với transcript này</button>
       </div>
     </details>
+  </section>
+
+  <!-- LIBRARY -->
+  <section class="card" id="library">
+    <div class="row" style="justify-content:space-between">
+      <div><span class="eyebrow">Thư viện</span><h2 style="font-size:1.05rem">Video đã lưu trên máy này</h2></div>
+      <div class="row">
+        <button type="button" class="ghost small" id="exportBtn">Xuất file sao lưu</button>
+        <label class="ghost small" style="cursor:pointer"><input type="file" id="importFile" accept=".json" hidden><button type="button" class="ghost" onclick="document.getElementById('importFile').click()">Nhập file</button></label>
+      </div>
+    </div>
+    <div class="lib" id="libList"></div>
   </section>
 
   <!-- GAME -->
@@ -260,7 +277,46 @@ async function loadYouTube(u){
   const xml = await fetchText(base);
   const segs = parseYtXml(xml);
   if(!segs.length) throw new Error('Không đọc được nội dung phụ đề.');
-  return {id, segs};
+  const tm = html.match(/<title>(.*?)<\/title>/); const ta=document.createElement('textarea'); ta.innerHTML = tm ? tm[1] : '';
+  const title = ta.value.replace(/\s*-\s*YouTube\s*$/,'').trim() || id;
+  return {id, segs, title};
+}
+
+/* ============ LIBRARY (localStorage) ============ */
+const LIB_KEY='subfill.library.v1';
+function libRead(){ try{ return JSON.parse(localStorage.getItem(LIB_KEY)||'[]'); }catch(e){ return []; } }
+function libWrite(list){ try{ localStorage.setItem(LIB_KEY, JSON.stringify(list)); return true; }catch(e){ return false; } }
+function libSave(entry){
+  const list = libRead().filter(x=>x.id!==entry.id);
+  list.unshift({...entry, savedAt:Date.now()});
+  if(!libWrite(list)) setStatus('Không lưu được vào thư viện (trình duyệt chặn bộ nhớ).','warn');
+  renderLib();
+}
+function libRemove(id){ libWrite(libRead().filter(x=>x.id!==id)); renderLib(); }
+function renderLib(){
+  const list=libRead(); const el=$('libList'); el.innerHTML='';
+  if(!list.length){ el.innerHTML='<p class="small muted">Chưa có video nào. Lấy phụ đề thành công là video sẽ tự được lưu ở đây.</p>'; return; }
+  list.forEach(x=>{
+    const d=document.createElement('div'); d.className='item';
+    const info=document.createElement('div');
+    info.innerHTML=`<div class="title">${esc(x.title||x.id)}</div><div class="small muted">${x.segs.length} dòng phụ đề · lưu ${new Date(x.savedAt).toLocaleDateString('vi-VN')}${x.id&&!x.id.startsWith('manual-')?' · '+esc(x.id):''}</div>`;
+    const btns=document.createElement('div'); btns.className='row';
+    const play=document.createElement('button'); play.className='primary'; play.textContent='Học'; play.onclick=()=>begin(x.segs, x.id.startsWith('manual-')?null:x.id, {skipSave:true});
+    const del=document.createElement('button'); del.className='ghost'; del.textContent='Xóa'; del.onclick=()=>{ if(del.dataset.arm){ libRemove(x.id);} else { del.dataset.arm='1'; del.textContent='Chắc chắn xóa?'; setTimeout(()=>{del.dataset.arm='';del.textContent='Xóa';},2500);} };
+    btns.append(play,del); d.append(info,btns); el.append(d);
+  });
+}
+function libExport(){
+  const blob=new Blob([JSON.stringify(libRead())],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='subfill-library.json'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function libImport(file){
+  file.text().then(t=>{
+    const inc=JSON.parse(t); if(!Array.isArray(inc)) throw 0;
+    const cur=libRead(); const ids=new Set(cur.map(x=>x.id));
+    inc.filter(x=>x&&x.id&&Array.isArray(x.segs)&&!ids.has(x.id)).forEach(x=>cur.push(x));
+    libWrite(cur); renderLib(); setStatus('Đã nhập thư viện.','ok');
+  }).catch(()=>setStatus('File sao lưu không hợp lệ.','err'));
 }
 
 /* ============ SOURCE: MANUAL ============ */
@@ -476,21 +532,29 @@ const SAMPLE = [
 
 /* ============ WIRING ============ */
 function setStatus(msg,kind){ const el=$('status'); if(!msg){el.hidden=true;return;} el.hidden=false; el.textContent=msg; el.className='status'+(kind?' '+kind:''); }
-function begin(segs, videoId){
+function begin(segs, videoId, opts={}){
   const sents = buildSentences(segs);
   if(sents.length<2){ setStatus('Transcript quá ngắn để tạo bài tập.','err'); return; }
   S.sentences=sents; S.videoId=videoId||null;
+  if(!opts.skipSave){
+    const id = videoId || ('manual-'+Date.now());
+    libSave({id, title: opts.title || (videoId ? videoId : 'Transcript dán tay '+new Date().toLocaleDateString('vi-VN')), segs});
+  }
+  $('library').hidden=true;
   setStatus('');
   if(S.videoId){ loadApi(); } else $('playerWrap').classList.remove('on');
   startGame();
 }
 $('urlForm').addEventListener('submit',async e=>{
   e.preventDefault(); const btn=$('loadBtn'); btn.disabled=true;
-  try{ const {id,segs}=await loadYouTube($('url').value); setStatus(`Đã lấy ${segs.length} dòng phụ đề.`,'ok'); begin(segs,id); }
+  try{ const {id,segs,title}=await loadYouTube($('url').value); setStatus(`Đã lấy ${segs.length} dòng phụ đề.`,'ok'); begin(segs,id,{title}); }
   catch(err){ setStatus('Lỗi: '+err.message,'err'); $('manual').open=true; }
   finally{ btn.disabled=false; }
 });
-$('sampleBtn').addEventListener('click',()=>begin(SAMPLE.map(t=>({start:null,dur:3,text:t})),null));
+$('sampleBtn').addEventListener('click',()=>begin(SAMPLE.map(t=>({start:null,dur:3,text:t})),null,{skipSave:true}));
+$('exportBtn').addEventListener('click',libExport);
+$('importFile').addEventListener('change',e=>{ if(e.target.files[0]) libImport(e.target.files[0]); e.target.value=''; });
+renderLib();
 $('manualBtn').addEventListener('click',()=>{
   const txt=$('manualText').value.trim(); if(!txt){ setStatus('Chưa có nội dung transcript.','err'); return; }
   const segs=parseManual(txt); if(!segs.length){ setStatus('Không đọc được định dạng transcript.','err'); return; }
@@ -510,7 +574,7 @@ $('playBtn').addEventListener('click',()=>{ const s=S.sentences[S.order[S.idx]];
 const reset=()=>{ stopPlayer(); startGame(); };
 $('resetBtn').addEventListener('click',reset);
 $('againBtn').addEventListener('click',reset);
-const change=()=>{ stopPlayer(); $('game').hidden=true; $('result').hidden=true; $('source').hidden=false; $('playerWrap').classList.remove('on'); };
+const change=()=>{ stopPlayer(); $('game').hidden=true; $('result').hidden=true; $('source').hidden=false; $('library').hidden=false; renderLib(); $('playerWrap').classList.remove('on'); };
 $('changeBtn').addEventListener('click',change);
 $('changeBtn2').addEventListener('click',change);
 </script>
