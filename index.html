@@ -264,7 +264,7 @@ async function loadViaWorker(id){
   const r=await fetch(w.replace(/\/+$/,'')+'/?v='+id,{signal:ctrl.signal}).catch(e=>{ throw new Error('Không gọi được proxy riêng: '+e.message); });
   clearTimeout(t);
   const data=await r.json().catch(()=>({error:'proxy trả về dữ liệu lạ'}));
-  if(!r.ok||data.error) throw new Error(data.error||('HTTP '+r.status));
+  if(!r.ok||data.error){ console.warn('SubFill worker log:', data.log); throw new Error(data.error||('HTTP '+r.status)); }
   return data;
 }
 function extractTracks(html){
@@ -284,9 +284,12 @@ function parseYtXml(xml){
 }
 async function loadYouTube(u){
   const id = parseVideoId(u); if(!id) throw new Error('Không nhận ra ID video trong link.');
-  const viaWorker = await loadViaWorker(id);
-  if(viaWorker) return viaWorker;
-  setStatus('Đang tải trang video qua proxy công cộng (có thể chậm)…');
+  let workerErr=null;
+  for(let i=0;i<2;i++){
+    try{ const viaWorker = await loadViaWorker(id); if(viaWorker) return viaWorker; break; }
+    catch(e){ workerErr=e; setStatus('Proxy riêng thất bại ('+e.message+'), thử lại…','warn'); await new Promise(r=>setTimeout(r,1500)); }
+  }
+  setStatus((workerErr?'Proxy riêng bị YouTube chặn. ':'')+'Đang thử proxy công cộng (có thể chậm)…','warn');
   const html = await fetchText(`https://www.youtube.com/watch?v=${id}&hl=en`);
   const tracks = extractTracks(html);
   if(!tracks.length) throw new Error('Video không có phụ đề (hoặc YouTube chặn proxy). Hãy dùng cách dán transcript bên dưới.');
@@ -580,7 +583,7 @@ function begin(segs, videoId, opts={}){
 $('urlForm').addEventListener('submit',async e=>{
   e.preventDefault(); const btn=$('loadBtn'); btn.disabled=true;
   try{ const {id,segs,title}=await loadYouTube($('url').value); setStatus(`Đã lấy ${segs.length} dòng phụ đề.`,'ok'); begin(segs,id,{title}); }
-  catch(err){ setStatus('Lỗi: '+err.message,'err'); $('manual').open=true; }
+  catch(err){ setStatus('Không lấy tự động được: '+err.message+'. Bạn có thể bấm "Lấy phụ đề" thử lại, hoặc dán transcript bên dưới.','err'); $('manual').open=true; }
   finally{ btn.disabled=false; }
 });
 $('sampleBtn').addEventListener('click',()=>begin(SAMPLE.map(t=>({start:null,dur:3,text:t})),null,{skipSave:true}));
