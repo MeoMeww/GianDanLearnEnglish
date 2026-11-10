@@ -152,6 +152,11 @@ kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);b
       </div>
     </div>
     <div class="lib" id="libList"></div>
+    <details>
+      <summary class="small">Cài đặt proxy riêng (Cloudflare Worker)</summary>
+      <p class="small muted" style="margin:8px 0">Proxy công cộng hay chậm hoặc bị chặn. Dán địa chỉ Worker của bạn (dạng https://ten.xxx.workers.dev) để lấy phụ đề ổn định hơn. Lưu trong trình duyệt này.</p>
+      <form class="row" id="workerForm"><input type="url" id="workerUrl" placeholder="https://subfill.xxx.workers.dev"><button type="submit">Lưu</button><span class="small muted" id="workerMsg"></span></form>
+    </details>
   </section>
 
   <!-- GAME -->
@@ -239,14 +244,28 @@ async function fetchText(u){
   let lastErr;
   for(const p of PROXIES){
     try{
-      const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), 15000);
+      const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), 30000);
       const r = await fetch(p(u), {signal:ctrl.signal}); clearTimeout(t);
       if(!r.ok) throw new Error('HTTP '+r.status);
       const txt = await r.text(); if(txt && txt.length>50) return txt;
       throw new Error('empty');
-    }catch(e){ lastErr=e; }
+    }catch(e){ lastErr = e.name==='AbortError' ? new Error('proxy quá chậm (hơn 30 giây)') : e; }
   }
   throw lastErr || new Error('fetch failed');
+}
+/* Own Cloudflare Worker (see worker.js): GET <worker>/?v=ID -> {id,title,segs} */
+const WORKER_KEY='subfill.worker';
+function getWorker(){ try{ return (localStorage.getItem(WORKER_KEY)||DEFAULT_WORKER||'').trim(); }catch(e){ return DEFAULT_WORKER||''; } }
+const DEFAULT_WORKER = ''; // dán địa chỉ worker vào đây để mọi người dùng chung, ví dụ 'https://subfill.xxx.workers.dev'
+async function loadViaWorker(id){
+  const w=getWorker(); if(!w) return null;
+  setStatus('Đang lấy phụ đề qua proxy riêng…');
+  const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),30000);
+  const r=await fetch(w.replace(/\/+$/,'')+'/?v='+id,{signal:ctrl.signal}).catch(e=>{ throw new Error('Không gọi được proxy riêng: '+e.message); });
+  clearTimeout(t);
+  const data=await r.json().catch(()=>({error:'proxy trả về dữ liệu lạ'}));
+  if(!r.ok||data.error) throw new Error(data.error||('HTTP '+r.status));
+  return data;
 }
 function extractTracks(html){
   const key='"captionTracks":'; const i = html.indexOf(key); if(i<0) return [];
@@ -265,7 +284,9 @@ function parseYtXml(xml){
 }
 async function loadYouTube(u){
   const id = parseVideoId(u); if(!id) throw new Error('Không nhận ra ID video trong link.');
-  setStatus('Đang tải trang video…');
+  const viaWorker = await loadViaWorker(id);
+  if(viaWorker) return viaWorker;
+  setStatus('Đang tải trang video qua proxy công cộng (có thể chậm)…');
   const html = await fetchText(`https://www.youtube.com/watch?v=${id}&hl=en`);
   const tracks = extractTracks(html);
   if(!tracks.length) throw new Error('Video không có phụ đề (hoặc YouTube chặn proxy). Hãy dùng cách dán transcript bên dưới.');
@@ -555,6 +576,8 @@ $('sampleBtn').addEventListener('click',()=>begin(SAMPLE.map(t=>({start:null,dur
 $('exportBtn').addEventListener('click',libExport);
 $('importFile').addEventListener('change',e=>{ if(e.target.files[0]) libImport(e.target.files[0]); e.target.value=''; });
 renderLib();
+$('workerUrl').value=getWorker();
+$('workerForm').addEventListener('submit',e=>{ e.preventDefault(); const v=$('workerUrl').value.trim(); try{ v?localStorage.setItem(WORKER_KEY,v):localStorage.removeItem(WORKER_KEY); $('workerMsg').textContent='Đã lưu.'; }catch(err){ $('workerMsg').textContent='Không lưu được.'; } });
 $('manualBtn').addEventListener('click',()=>{
   const txt=$('manualText').value.trim(); if(!txt){ setStatus('Chưa có nội dung transcript.','err'); return; }
   const segs=parseManual(txt); if(!segs.length){ setStatus('Không đọc được định dạng transcript.','err'); return; }
