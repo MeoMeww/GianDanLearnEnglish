@@ -530,8 +530,17 @@ function makePlayer(){
   if(!apiReady||!S.videoId) return;
   if(player){ playerReady=false; player.cueVideoById(S.videoId); playerReady=true; if(pendingPlay) playSeg(pendingPlay); return; }
   if(location.protocol==='file:') setStatus('Bạn đang mở file trực tiếp (file://) nên YouTube sẽ báo lỗi 153. Hãy chạy start-windows.bat / start-mac.command để mở qua http://localhost.','warn');
-  player=new YT.Player('yt',{videoId:S.videoId,host:'https://www.youtube-nocookie.com',playerVars:{rel:0,modestbranding:1,controls:1,playsinline:1,origin:location.origin},
-    events:{onReady:()=>{ playerReady=true; if(pendingPlay) playSeg(pendingPlay); }}});
+  player=new YT.Player('yt',{videoId:S.videoId,host:'https://www.youtube-nocookie.com',playerVars:{rel:0,modestbranding:1,controls:1,playsinline:1,cc_load_policy:0,iv_load_policy:3,origin:location.origin},
+    events:{
+      onReady:()=>{ playerReady=true; hideCaptions(); if(pendingPlay) playSeg(pendingPlay); },
+      onStateChange:e=>{ if(e.data===YT.PlayerState.PLAYING) hideCaptions(); }
+    }});
+}
+/* Tắt phụ đề CC trên player để không lộ đáp án (API không chính thức nhưng được dùng rộng rãi). */
+function hideCaptions(){
+  try{ player.unloadModule('captions'); }catch(e){}
+  try{ player.unloadModule('cc'); }catch(e){}
+  try{ player.setOption('captions','track',{}); }catch(e){}
 }
 /* Play one sentence: seek to its start, then watch currentTime and pause at its end. */
 function playSeg(s){
@@ -541,7 +550,7 @@ function playSeg(s){
   $('playerWrap').classList.add('on');
   clearInterval(watchTimer);
   segEnd = s.end!=null ? s.end : s.start+4;
-  player.seekTo(Math.max(0,s.start-0.2),true); player.playVideo();
+  player.seekTo(Math.max(0,s.start-0.2),true); player.playVideo(); hideCaptions();
   watchTimer=setInterval(()=>{
     try{
       const t=player.getCurrentTime();
