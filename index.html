@@ -256,7 +256,7 @@ async function fetchText(u){
 /* Own Cloudflare Worker (see worker.js): GET <worker>/?v=ID -> {id,title,segs} */
 const WORKER_KEY='subfill.worker';
 function getWorker(){ try{ return (localStorage.getItem(WORKER_KEY)||DEFAULT_WORKER||'').trim(); }catch(e){ return DEFAULT_WORKER||''; } }
-const DEFAULT_WORKER = ''; // dán địa chỉ worker vào đây để mọi người dùng chung, ví dụ 'https://subfill.xxx.workers.dev'
+const DEFAULT_WORKER = 'https://subfill.trongduc-hd95.workers.dev'; // proxy dùng chung; người dùng có thể ghi đè trong Cài đặt
 async function loadViaWorker(id){
   const w=getWorker(); if(!w) return null;
   setStatus('Đang lấy phụ đề qua proxy riêng…');
@@ -313,6 +313,7 @@ function libSave(entry){
   if(!libWrite(list)) setStatus('Không lưu được vào thư viện (trình duyệt chặn bộ nhớ).','warn');
   renderLib();
 }
+function libRename(id,title){ libWrite(libRead().map(x=>x.id===id?{...x,title}:x)); renderLib(); }
 function libRemove(id){ libWrite(libRead().filter(x=>x.id!==id)); renderLib(); }
 function renderLib(){
   const list=libRead(); const el=$('libList'); el.innerHTML='';
@@ -323,8 +324,18 @@ function renderLib(){
     info.innerHTML=`<div class="title">${esc(x.title||x.id)}</div><div class="small muted">${x.segs.length} dòng phụ đề · lưu ${new Date(x.savedAt).toLocaleDateString('vi-VN')}${x.id&&!x.id.startsWith('manual-')?' · '+esc(x.id):''}</div>`;
     const btns=document.createElement('div'); btns.className='row';
     const play=document.createElement('button'); play.className='primary'; play.textContent='Học'; play.onclick=()=>begin(x.segs, x.id.startsWith('manual-')?null:x.id, {skipSave:true});
+    const ren=document.createElement('button'); ren.className='ghost'; ren.textContent='Đổi tên'; ren.title='Đổi tên video';
+    ren.onclick=()=>{
+      const t=info.querySelector('.title'); if(t.querySelector('input')) return;
+      const old=x.title||x.id; t.innerHTML='';
+      const inp=document.createElement('input'); inp.type='text'; inp.value=old; inp.maxLength=120; inp.style.width='100%'; inp.setAttribute('aria-label','Tên video');
+      const done=()=>{ const v=inp.value.trim()||old; libRename(x.id,v); };
+      inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){e.preventDefault();done();} if(e.key==='Escape'){renderLib();} });
+      inp.addEventListener('blur',done);
+      t.append(inp); inp.focus(); inp.select();
+    };
     const del=document.createElement('button'); del.className='ghost'; del.textContent='Xóa'; del.onclick=()=>{ if(del.dataset.arm){ libRemove(x.id);} else { del.dataset.arm='1'; del.textContent='Chắc chắn xóa?'; setTimeout(()=>{del.dataset.arm='';del.textContent='Xóa';},2500);} };
-    btns.append(play,del); d.append(info,btns); el.append(d);
+    btns.append(play,ren,del); d.append(info,btns); el.append(d);
   });
 }
 function libExport(){
