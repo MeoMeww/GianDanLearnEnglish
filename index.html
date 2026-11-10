@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SubFill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working column (max 820px) — header strip, source panel, then a single focused sentence card with a slim score rail above it. */
+:root{
+  --bg:#f6f4ef; --surface:#ffffff; --surface-2:#eeeae1; --fg:#1d1b17; --muted:#6c675c; --line:#dcd6c8;
+  --accent:#0d6b63; --accent-fg:#ffffff; --accent-soft:#d9ece8;
+  --ok:#1f7a3c; --ok-soft:#dcf1e1; --bad:#b4342a; --bad-soft:#f8e0dc; --warn:#946200; --warn-soft:#f7ecc8;
+  --font-body:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"DM Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#16171a; --surface:#1f2024; --surface-2:#292a30; --fg:#ecebe6; --muted:#a09d94; --line:#3a3b42;
+  --accent:#4fc3b5; --accent-fg:#0d1f1c; --accent-soft:#1d3a36;
+  --ok:#5fcf84; --ok-soft:#1b3625; --bad:#f08a7e; --bad-soft:#44221f; --warn:#f0c15a; --warn-soft:#3e3416;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#16171a; --surface:#1f2024; --surface-2:#292a30; --fg:#ecebe6; --muted:#a09d94; --line:#3a3b42;
+  --accent:#4fc3b5; --accent-fg:#0d1f1c; --accent-soft:#1d3a36;
+  --ok:#5fcf84; --ok-soft:#1b3625; --bad:#f08a7e; --bad-soft:#44221f; --warn:#f0c15a; --warn-soft:#3e3416;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:16px;line-height:1.5}
+body{padding-block:24px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:820px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+h1,h2,h3{margin:0;text-wrap:balance;font-weight:800;letter-spacing:-.01em}
+h1{font-size:1.5rem}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+.eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input[type=text],input[type=url],textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+input[type=url]{flex:1 1 260px}
+textarea{width:100%;min-height:120px;font-family:var(--font-mono);font-size:.85rem;resize:vertical}
+button{font:inherit;font-weight:700;border:1px solid var(--line);background:var(--surface-2);color:var(--fg);border-radius:10px;padding:10px 16px;cursor:pointer;transition:transform .08s ease,background .15s}
+button:hover{background:var(--line)}
+button:active{transform:translateY(1px)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button.primary:hover{filter:brightness(1.08)}
+button.ghost{background:transparent}
+button:focus-visible,input:focus-visible,textarea:focus-visible,.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:8px 14px;background:transparent}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+details summary{cursor:pointer;font-weight:700;color:var(--accent)}
+details{margin-top:8px}
+.status{padding:10px 12px;border-radius:10px;background:var(--surface-2);font-size:.9rem}
+.status.err{background:var(--bad-soft);color:var(--bad)}
+.status.ok{background:var(--ok-soft);color:var(--ok)}
+.status.warn{background:var(--warn-soft);color:var(--warn)}
+
+/* score rail */
+.rail{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.bar{height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.stats{display:flex;gap:16px;font-variant-numeric:tabular-nums}
+.stats b{font-size:1.4rem;font-weight:800}
+.stats span{display:block;font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+
+/* sentence card */
+.sentence{font-size:1.45rem;line-height:1.9;font-weight:600;display:flex;flex-wrap:wrap;gap:0 .45ch;align-items:baseline}
+.blank{display:inline-block;font-family:var(--font-mono);font-size:1.1rem;font-weight:500;background:var(--surface-2);border:0;border-bottom:2px solid var(--accent);border-radius:6px 6px 0 0;padding:2px 8px;color:var(--fg);text-align:center;min-width:5ch;vertical-align:baseline}
+.blank:focus{outline:none;background:var(--accent-soft)}
+.blank.ok{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.blank.bad{background:var(--bad-soft);border-color:var(--bad);color:var(--bad);text-decoration:line-through}
+.answer{font-family:var(--font-mono);font-size:1.05rem;color:var(--ok);background:var(--ok-soft);padding:2px 8px;border-radius:6px}
+.hint{font-size:.8rem;color:var(--muted);margin-top:4px}
+.meta{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.time{font-family:var(--font-mono);font-size:.85rem;color:var(--muted)}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;align-items:center}
+.feedback{margin-top:14px;font-weight:700}
+.feedback.ok{color:var(--ok)} .feedback.bad{color:var(--bad)}
+.player-wrap{aspect-ratio:16/9;max-width:100%;width:100%;max-height:340px;border-radius:12px;overflow:hidden;background:#000;display:none;margin-bottom:6px}
+.player-wrap.on{display:block}
+.player-wrap iframe,#yt{width:100%;height:100%;border:0}
+
+/* result */
+.score-big{font-size:4rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.grade{font-size:1.2rem;font-weight:700}
+.missed{display:grid;gap:6px;margin-top:14px;max-height:280px;overflow:auto;font-size:.95rem}
+.missed div{display:flex;gap:10px;flex-wrap:wrap;padding:8px 10px;border-radius:8px;background:var(--surface-2)}
+.missed .w{font-family:var(--font-mono)}
+.missed .w.bad{color:var(--bad);text-decoration:line-through}
+.missed .w.ok{color:var(--ok)}
+kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);border-radius:5px;padding:1px 5px;background:var(--surface-2)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+@media (max-width:480px){.sentence{font-size:1.2rem}.score-big{font-size:3rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>SubFill</h1>
+      <p class="muted small">Điền từ còn thiếu trong phụ đề video YouTube. Chấm trên thang 100.</p>
+    </div>
+    <div class="row">
+      <span class="eyebrow">Độ khó</span>
+      <div class="seg" id="difficulty" role="group" aria-label="Độ khó">
+        <button type="button" data-d="easy" aria-pressed="true">Easy · 1 từ</button>
+        <button type="button" data-d="normal" aria-pressed="false">Normal · 2 từ</button>
+        <button type="button" data-d="hard" aria-pressed="false">Hard · 3–4 từ</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- SOURCE -->
+  <section class="card" id="source">
+    <form id="urlForm" class="row" autocomplete="off">
+      <input type="url" id="url" placeholder="Dán link YouTube, ví dụ https://www.youtube.com/watch?v=-Tw81EQYV_Y" value="https://www.youtube.com/watch?v=-Tw81EQYV_Y">
+      <button type="submit" class="primary" id="loadBtn">Lấy phụ đề</button>
+      <button type="button" id="sampleBtn" class="ghost">Dùng hội thoại mẫu</button>
+    </form>
+    <div id="status" class="status" style="margin-top:12px" hidden></div>
+    <details id="manual">
+      <summary>Không lấy được tự động? Dán transcript hoặc tải file .srt / .vtt</summary>
+      <p class="small muted" style="margin:8px 0">Trên YouTube: mô tả video → <b>Show transcript</b> → chọn tất cả, sao chép, dán vào đây (dòng thời gian và dòng chữ xen kẽ đều được). Hoặc dán nội dung file .srt / .vtt / XML phụ đề.</p>
+      <textarea id="manualText" placeholder="0:00&#10;Hello, how are you today?&#10;0:03&#10;I'm fine, thank you."></textarea>
+      <div class="row" style="margin-top:8px">
+        <input type="file" id="file" accept=".srt,.vtt,.txt,.xml">
+        <button type="button" id="manualBtn" class="primary">Bắt đầu với transcript này</button>
+      </div>
+    </details>
+  </section>
+
+  <!-- GAME -->
+  <section id="game" hidden>
+    <div class="card rail" style="margin-bottom:16px">
+      <div>
+        <div class="row" style="justify-content:space-between;margin-bottom:6px">
+          <span class="eyebrow">Tiến độ</span>
+          <span class="small muted" id="progressText">Câu 1 / 10</span>
+        </div>
+        <div class="bar"><i id="progressBar"></i></div>
+      </div>
+      <div class="stats">
+        <div><b id="scoreNow">0</b><span>Điểm / 100</span></div>
+        <div><b id="hitNow">0/0</b><span>Từ đúng</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="meta">
+        <span class="time" id="timeLabel"></span>
+        <div class="row">
+          <label class="small row" id="autoWrap" hidden style="gap:6px"><input type="checkbox" id="autoPlay" checked> Tự phát, dừng cuối câu</label>
+          <button type="button" id="playBtn" class="ghost" hidden>▶ Nghe lại câu này</button>
+          <button type="button" id="hintBtn" class="ghost">Gợi ý chữ đầu</button>
+        </div>
+      </div>
+      <div class="player-wrap" id="playerWrap"><div id="yt"></div></div>
+      <div class="sentence" id="sentence" style="margin-top:14px"></div>
+      <div class="hint" id="hint"></div>
+      <div class="feedback" id="feedback"></div>
+      <div class="actions">
+        <button type="button" class="primary" id="checkBtn">Kiểm tra</button>
+        <button type="button" id="nextBtn" hidden>Câu tiếp →</button>
+        <button type="button" class="ghost" id="skipBtn">Bỏ qua</button>
+        <span class="small muted" style="margin-left:auto"><kbd>Enter</kbd> kiểm tra / tiếp · <kbd>Tab</kbd> ô kế</span>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px">
+      <button type="button" id="resetBtn">↺ Reset – làm lại từ đầu</button>
+      <button type="button" class="ghost" id="changeBtn">Đổi video</button>
+    </div>
+  </section>
+
+  <!-- RESULT -->
+  <section id="result" class="card" hidden>
+    <span class="eyebrow">Kết quả</span>
+    <div class="score-big" id="finalScore">0</div>
+    <div class="grade" id="finalGrade"></div>
+    <p class="muted" id="finalDetail"></p>
+    <div class="missed" id="missed"></div>
+    <div class="row" style="margin-top:18px">
+      <button type="button" class="primary" id="againBtn">↺ Làm lại (xáo từ mới)</button>
+      <button type="button" id="changeBtn2">Đổi video</button>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ============ STATE ============ */
+const S = {
+  videoId:null, sentences:[], order:[], idx:0, difficulty:'easy',
+  blanks:[], total:0, correct:0, checked:false, log:[], hintUsed:false
+};
+const $ = id => document.getElementById(id);
+const BLANKS = {easy:1, normal:2, hard:3};
+
+/* ============ SOURCE: YOUTUBE ============ */
+function parseVideoId(u){
+  try{
+    const url = new URL(u.trim());
+    if(url.hostname.includes('youtu.be')) return url.pathname.slice(1).split('/')[0];
+    if(url.searchParams.get('v')) return url.searchParams.get('v');
+    const m = url.pathname.match(/\/(embed|shorts|live)\/([\w-]{11})/); if(m) return m[2];
+  }catch(e){}
+  const m = u.match(/([\w-]{11})/); return m ? m[1] : null;
+}
+const PROXIES = [
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+];
+async function fetchText(u){
+  let lastErr;
+  for(const p of PROXIES){
+    try{
+      const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), 15000);
+      const r = await fetch(p(u), {signal:ctrl.signal}); clearTimeout(t);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const txt = await r.text(); if(txt && txt.length>50) return txt;
+      throw new Error('empty');
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr || new Error('fetch failed');
+}
+function extractTracks(html){
+  const key='"captionTracks":'; const i = html.indexOf(key); if(i<0) return [];
+  let j=i+key.length, depth=0, start=j;
+  for(;j<html.length;j++){ const c=html[j]; if(c==='[')depth++; else if(c===']'){depth--; if(depth===0){j++;break;}} }
+  try{ return JSON.parse(html.slice(start,j)); }catch(e){ return []; }
+}
+function parseYtXml(xml){
+  const doc = new DOMParser().parseFromString(xml,'text/xml');
+  const ta = document.createElement('textarea');
+  const out=[];
+  // <text start dur> (srv1) or <p t d> (srv3)
+  doc.querySelectorAll('text').forEach(n=>{ ta.innerHTML=n.textContent; out.push({start:+n.getAttribute('start'),dur:+n.getAttribute('dur')||3,text:ta.value}); });
+  if(!out.length) doc.querySelectorAll('p').forEach(n=>{ out.push({start:(+n.getAttribute('t'))/1000,dur:(+n.getAttribute('d')||3000)/1000,text:n.textContent}); });
+  return out;
+}
+async function loadYouTube(u){
+  const id = parseVideoId(u); if(!id) throw new Error('Không nhận ra ID video trong link.');
+  setStatus('Đang tải trang video…');
+  const html = await fetchText(`https://www.youtube.com/watch?v=${id}&hl=en`);
+  const tracks = extractTracks(html);
+  if(!tracks.length) throw new Error('Video không có phụ đề (hoặc YouTube chặn proxy). Hãy dùng cách dán transcript bên dưới.');
+  const en = tracks.filter(t=>(t.languageCode||'').startsWith('en'));
+  if(!en.length) throw new Error('Video không có phụ đề tiếng Anh. Có: '+tracks.map(t=>t.languageCode).join(', '));
+  en.sort((a,b)=>(a.kind==='asr')-(b.kind==='asr'));
+  setStatus('Đang tải phụ đề '+(en[0].kind==='asr'?'(tự động)':'(người làm)')+'…');
+  const base = en[0].baseUrl.replace(/\\u0026/g,'&');
+  const xml = await fetchText(base);
+  const segs = parseYtXml(xml);
+  if(!segs.length) throw new Error('Không đọc được nội dung phụ đề.');
+  return {id, segs};
+}
+
+/* ============ SOURCE: MANUAL ============ */
+function parseManual(txt){
+  txt = txt.replace(/\r/g,'').trim();
+  if(/<text\b|<p\b[^>]*\bt=/.test(txt) && /<\/(text|p|transcript|timedtext)>/.test(txt)) return parseYtXml(txt);
+  const toSec = s => { const p=s.replace(',','.').split(':').map(Number); return p.reduce((a,b)=>a*60+b,0); };
+  const lines = txt.split('\n');
+  const out=[];
+  // SRT / VTT
+  if(/-->/.test(txt)){
+    let cur=null;
+    for(const l of lines){
+      const m=l.match(/(\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3})\s*-->\s*(\d{1,2}:\d{2}(?::\d{2})?[.,]\d{3})/);
+      if(m){ cur={start:toSec(m[1]),dur:Math.max(0.5,toSec(m[2])-toSec(m[1])),text:''}; out.push(cur); continue; }
+      if(!cur) continue;
+      if(/^\d+$/.test(l.trim())||!l.trim()){ continue; }
+      cur.text += (cur.text?' ':'') + l.replace(/<[^>]+>/g,'').trim();
+    }
+    return out.filter(s=>s.text);
+  }
+  // YouTube transcript panel: timestamp line, text line
+  let cur=null, any=false;
+  for(const l of lines){
+    const t=l.trim(); if(!t) continue;
+    if(/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)){ cur={start:toSec(t),dur:3,text:''}; out.push(cur); any=true; continue; }
+    const m=t.match(/^(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+)$/);
+    if(m){ out.push({start:toSec(m[1]),dur:3,text:m[2]}); any=true; continue; }
+    if(cur) cur.text += (cur.text?' ':'')+t; else out.push({start:null,dur:3,text:t});
+  }
+  if(any){ for(let i=0;i<out.length-1;i++) if(out[i].start!=null&&out[i+1].start!=null) out[i].dur=Math.max(1,out[i+1].start-out[i].start); return out.filter(s=>s.text); }
+  // plain lines
+  return lines.map(l=>l.trim()).filter(Boolean).map(t=>({start:null,dur:3,text:t}));
+}
+
+/* ============ SENTENCES ============ */
+function cleanText(t){
+  return t.replace(/\[[^\]]*\]|\([^)]*\)/g,' ').replace(/>>\s*/g,'').replace(/\s+/g,' ').trim();
+}
+function buildSentences(segs){
+  segs = segs.map(s=>({...s,text:cleanText(s.text)})).filter(s=>s.text);
+  // join with char->seg map
+  let full=''; const map=[];
+  segs.forEach((s,i)=>{ if(full) full+=' '; map.push({pos:full.length,i}); full+=s.text; });
+  const segAt = pos => { let r=map[0]; for(const m of map){ if(m.pos<=pos) r=m; else break; } return segs[r.i]; };
+  const wordsOf = t => t.split(/\s+/).filter(Boolean).length;
+  let pieces=[];
+  const punct = full.match(/[^.!?]+[.!?]+["'”’)]*\s*/g) || [];
+  const punctWords = punct.reduce((a,p)=>a+wordsOf(p),0);
+  if(punct.length>=3 && punctWords/punct.length <= 28){
+    let pos=0;
+    for(const p of punct){ const idx=full.indexOf(p,pos); pieces.push({text:p.trim(),pos:idx}); pos=idx+p.length; }
+  }else{
+    // auto captions without punctuation: chunk by segments ~10-14 words
+    let cur='',curPos=0;
+    segs.forEach((s,i)=>{ const p=map[i].pos; if(!cur){cur=s.text;curPos=p;} else cur+=' '+s.text; if(wordsOf(cur)>=10){ pieces.push({text:cur,pos:curPos}); cur=''; } });
+    if(cur) pieces.push({text:cur,pos:curPos});
+  }
+  // merge very short pieces into the previous one
+  const out=[];
+  for(const p of pieces){
+    if(out.length && wordsOf(p.text)<4){ out[out.length-1].text+=' '+p.text; continue; }
+    out.push(p);
+  }
+  return out.map(p=>{ const sg=segAt(p.pos); const end=segAt(p.pos+p.text.length-1); return {text:p.text,start:sg.start,end:(end.start!=null?end.start+end.dur:null)}; })
+            .filter(s=>wordsOf(s.text)>=3);
+}
+
+/* ============ GAME ============ */
+const norm = w => w.toLowerCase().replace(/[^a-z0-9']/g,'').replace(/^'+|'+$/g,'');
+function pickBlanks(tokens, n){
+  const cand = tokens.map((t,i)=>({i,core:norm(t)})).filter(c=>c.core.length>=3 && /[a-z]/.test(c.core));
+  // shuffle, prefer unique cores
+  for(let i=cand.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cand[i],cand[j]]=[cand[j],cand[i]]; }
+  const used=new Set(), picked=[];
+  for(const c of cand){ if(picked.length>=n) break; if(used.has(c.core)) continue; used.add(c.core); picked.push(c.i); }
+  return picked.sort((a,b)=>a-b);
+}
+function blanksFor(words){
+  let n = BLANKS[S.difficulty];
+  if(S.difficulty==='hard' && words>12) n=4;
+  return Math.max(1, Math.min(n, Math.floor(words/2)));
+}
+function startGame(){
+  S.order = S.sentences.map((_,i)=>i); S.idx=0; S.total=0; S.correct=0; S.log=[];
+  $('source').hidden=true; $('result').hidden=true; $('game').hidden=false;
+  $('playBtn').hidden = !S.videoId; $('autoWrap').hidden = !S.videoId;
+  if(S.videoId) $('playerWrap').classList.add('on');
+  renderCard();
+}
+function renderCard(){
+  const s = S.sentences[S.order[S.idx]];
+  S.checked=false; S.hintUsed=false;
+  const tokens = s.text.split(/\s+/);
+  const idxs = pickBlanks(tokens, blanksFor(tokens.length));
+  S.blanks = idxs.map(i=>({i,word:tokens[i],core:norm(tokens[i])}));
+  const el=$('sentence'); el.innerHTML='';
+  tokens.forEach((t,i)=>{
+    const b=S.blanks.find(b=>b.i===i);
+    if(b){
+      const m=t.match(/^([^A-Za-z0-9']*)([A-Za-z0-9'’-]+)(.*)$/);
+      const pre=m?m[1]:'', core=m?m[2]:t, post=m?m[3]:'';
+      b.display=core;
+      const span=document.createElement('span');
+      if(pre) span.append(pre);
+      const inp=document.createElement('input'); inp.className='blank'; inp.type='text'; inp.autocomplete='off'; inp.spellcheck=false;
+      inp.id='blank-'+i; inp.style.width=Math.max(5,core.length+2)+'ch'; inp.setAttribute('aria-label','Từ còn thiếu'); inp.dataset.i=i;
+      inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); S.checked?next():check(); } });
+      span.append(inp); if(post) span.append(post); el.append(span);
+    }else{ const w=document.createElement('span'); w.textContent=t; el.append(w); }
+  });
+  $('hint').textContent=''; $('feedback').textContent=''; $('feedback').className='feedback';
+  $('checkBtn').hidden=false; $('nextBtn').hidden=true; $('skipBtn').hidden=false; $('hintBtn').disabled=false;
+  $('timeLabel').textContent = s.start!=null ? fmt(s.start)+(s.end?' – '+fmt(s.end):'') : '';
+  updateRail();
+  if(S.videoId && s.start!=null && $('autoPlay').checked) playSeg(s); else stopPlayer();
+  const first=el.querySelector('input'); if(first) first.focus();
+}
+function fmt(t){ t=Math.max(0,Math.floor(t)); const m=Math.floor(t/60), s=t%60; return m+':'+String(s).padStart(2,'0'); }
+function updateRail(){
+  $('progressText').textContent=`Câu ${S.idx+1} / ${S.sentences.length}`;
+  $('progressBar').style.width=(S.idx/S.sentences.length*100)+'%';
+  $('scoreNow').textContent = S.total? Math.round(S.correct/S.total*100) : 0;
+  $('hitNow').textContent = `${S.correct}/${S.total}`;
+}
+function check(){
+  if(S.checked) return; S.checked=true;
+  let ok=0;
+  S.blanks.forEach(b=>{
+    const inp=$('blank-'+b.i); const v=norm(inp.value); const good=v===b.core;
+    inp.disabled=true; inp.classList.add(good?'ok':'bad');
+    if(good) ok++; else { const a=document.createElement('span'); a.className='answer'; a.textContent=b.display; inp.after(' ',a); }
+    S.log.push({sentence:S.sentences[S.order[S.idx]].text, word:b.display, given:inp.value, ok:good});
+  });
+  S.total+=S.blanks.length; S.correct+=ok;
+  const fb=$('feedback');
+  fb.textContent = ok===S.blanks.length ? `Chính xác! +${ok}/${S.blanks.length}` : `Đúng ${ok}/${S.blanks.length} từ`;
+  fb.className='feedback '+(ok===S.blanks.length?'ok':'bad');
+  $('checkBtn').hidden=true; $('nextBtn').hidden=false; $('skipBtn').hidden=true; $('hintBtn').disabled=true;
+  updateRail(); $('nextBtn').focus();
+}
+function skip(){
+  if(S.checked) return;
+  S.blanks.forEach(b=>{ const inp=$('blank-'+b.i); inp.value=''; });
+  check();
+}
+function next(){
+  S.idx++;
+  if(S.idx>=S.sentences.length) return finish();
+  renderCard();
+}
+function finish(){
+  stopPlayer();
+  $('game').hidden=true; $('result').hidden=false;
+  const score = S.total? Math.round(S.correct/S.total*100):0;
+  $('finalScore').textContent=score;
+  $('finalGrade').textContent = score>=90?'Xuất sắc':score>=75?'Tốt':score>=50?'Khá':'Cần luyện thêm';
+  $('finalDetail').textContent=`Đúng ${S.correct}/${S.total} từ · ${S.sentences.length} câu · độ khó ${S.difficulty}`;
+  const m=$('missed'); m.innerHTML='';
+  const miss=S.log.filter(l=>!l.ok);
+  if(!miss.length){ m.innerHTML='<p class="muted">Không sai từ nào.</p>'; }
+  miss.forEach(l=>{ const d=document.createElement('div'); d.innerHTML=`<span class="w bad">${esc(l.given||'(bỏ trống)')}</span><span class="w ok">${esc(l.word)}</span><span class="muted small">${esc(l.sentence)}</span>`; m.append(d); });
+}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function hint(){
+  if(S.checked||S.hintUsed) return; S.hintUsed=true;
+  $('hint').textContent='Gợi ý: '+S.blanks.map(b=>b.display[0]+'·'.repeat(Math.max(0,b.display.length-1))).join('   ');
+  S.blanks.forEach(b=>{ const inp=$('blank-'+b.i); if(!inp.value) inp.value=b.display[0]; });
+}
+
+/* ============ YOUTUBE PLAYER ============ */
+let player=null, apiReady=false, watchTimer=null, pendingPlay=null, playerReady=false, segEnd=null;
+window.onYouTubeIframeAPIReady=()=>{ apiReady=true; makePlayer(); };
+function loadApi(){ if(window.YT&&window.YT.Player){apiReady=true;makePlayer();return;} if(document.getElementById('ytapi')) return; const s=document.createElement('script'); s.id='ytapi'; s.src='https://www.youtube.com/iframe_api'; s.onerror=()=>setStatus('Không tải được YouTube player (cần kết nối mạng).','warn'); document.head.append(s); }
+function makePlayer(){
+  if(!apiReady||!S.videoId) return;
+  if(player){ playerReady=false; player.cueVideoById(S.videoId); playerReady=true; if(pendingPlay) playSeg(pendingPlay); return; }
+  if(location.protocol==='file:') setStatus('Bạn đang mở file trực tiếp (file://) nên YouTube sẽ báo lỗi 153. Hãy chạy start-windows.bat / start-mac.command để mở qua http://localhost.','warn');
+  player=new YT.Player('yt',{videoId:S.videoId,host:'https://www.youtube-nocookie.com',playerVars:{rel:0,modestbranding:1,controls:1,playsinline:1,origin:location.origin},
+    events:{onReady:()=>{ playerReady=true; if(pendingPlay) playSeg(pendingPlay); }}});
+}
+/* Play one sentence: seek to its start, then watch currentTime and pause at its end. */
+function playSeg(s){
+  if(s.start==null) return;
+  if(!player||!playerReady){ pendingPlay=s; loadApi(); return; }
+  pendingPlay=null;
+  $('playerWrap').classList.add('on');
+  clearInterval(watchTimer);
+  segEnd = s.end!=null ? s.end : s.start+4;
+  player.seekTo(Math.max(0,s.start-0.2),true); player.playVideo();
+  watchTimer=setInterval(()=>{
+    try{
+      const t=player.getCurrentTime();
+      if(t>=segEnd+0.15){ player.pauseVideo(); clearInterval(watchTimer); }
+    }catch(e){}
+  },100);
+}
+function stopPlayer(){ clearInterval(watchTimer); pendingPlay=null; try{player&&player.pauseVideo&&player.pauseVideo();}catch(e){} }
+
+/* ============ SAMPLE ============ */
+const SAMPLE = [
+ "Good morning! Are you ready for the team meeting at ten?",
+ "Almost. I still need to print the latest report for everyone.",
+ "Don't worry about printing, we can share the slides on the screen instead.",
+ "That sounds much easier. Did the client confirm the new deadline?",
+ "Yes, they agreed to move it to next Friday, which gives us one extra week.",
+ "Perfect. Then we should finish the design review before Wednesday.",
+ "I'll send the invitation this afternoon and book the small conference room.",
+ "Great, and remember to bring the budget numbers, the manager will ask about them.",
+ "Of course. By the way, the coffee machine on the second floor is finally working again.",
+ "Finally! I was getting tired of walking to the café across the street every morning."
+];
+
+/* ============ WIRING ============ */
+function setStatus(msg,kind){ const el=$('status'); if(!msg){el.hidden=true;return;} el.hidden=false; el.textContent=msg; el.className='status'+(kind?' '+kind:''); }
+function begin(segs, videoId){
+  const sents = buildSentences(segs);
+  if(sents.length<2){ setStatus('Transcript quá ngắn để tạo bài tập.','err'); return; }
+  S.sentences=sents; S.videoId=videoId||null;
+  setStatus('');
+  if(S.videoId){ loadApi(); } else $('playerWrap').classList.remove('on');
+  startGame();
+}
+$('urlForm').addEventListener('submit',async e=>{
+  e.preventDefault(); const btn=$('loadBtn'); btn.disabled=true;
+  try{ const {id,segs}=await loadYouTube($('url').value); setStatus(`Đã lấy ${segs.length} dòng phụ đề.`,'ok'); begin(segs,id); }
+  catch(err){ setStatus('Lỗi: '+err.message,'err'); $('manual').open=true; }
+  finally{ btn.disabled=false; }
+});
+$('sampleBtn').addEventListener('click',()=>begin(SAMPLE.map(t=>({start:null,dur:3,text:t})),null));
+$('manualBtn').addEventListener('click',()=>{
+  const txt=$('manualText').value.trim(); if(!txt){ setStatus('Chưa có nội dung transcript.','err'); return; }
+  const segs=parseManual(txt); if(!segs.length){ setStatus('Không đọc được định dạng transcript.','err'); return; }
+  const vid=parseVideoId($('url').value||''); begin(segs, segs.some(s=>s.start!=null)?vid:null);
+});
+$('file').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f) return; f.text().then(t=>{ $('manualText').value=t; }); });
+$('difficulty').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  S.difficulty=b.dataset.d; [...$('difficulty').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  if(!$('game').hidden && !S.checked) renderCard();
+});
+$('checkBtn').addEventListener('click',check);
+$('nextBtn').addEventListener('click',next);
+$('skipBtn').addEventListener('click',skip);
+$('hintBtn').addEventListener('click',hint);
+$('playBtn').addEventListener('click',()=>{ const s=S.sentences[S.order[S.idx]]; if(s.start!=null) playSeg(s); });
+const reset=()=>{ stopPlayer(); startGame(); };
+$('resetBtn').addEventListener('click',reset);
+$('againBtn').addEventListener('click',reset);
+const change=()=>{ stopPlayer(); $('game').hidden=true; $('result').hidden=true; $('source').hidden=false; $('playerWrap').classList.remove('on'); };
+$('changeBtn').addEventListener('click',change);
+$('changeBtn2').addEventListener('click',change);
+</script>
+</body>
+</html>
