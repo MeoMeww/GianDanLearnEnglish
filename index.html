@@ -91,6 +91,8 @@ details{margin-top:8px}
 .feedback.ok{color:var(--ok)} .feedback.bad{color:var(--bad)}
 .player-wrap{aspect-ratio:16/9;max-width:100%;width:100%;max-height:340px;border-radius:12px;overflow:hidden;background:#000;display:none;margin-bottom:6px}
 .player-wrap.on{display:block}
+#aud{border-radius:12px;background:var(--surface-2)}
+select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:4px 8px}
 .player-wrap iframe,#yt{width:100%;height:100%;border:0}
 
 /* result */
@@ -162,6 +164,21 @@ kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);b
     </details>
   </section>
 
+  <!-- AUDIO SOURCE -->
+  <section class="card" id="audioSource">
+    <span class="eyebrow">Bài nghe từ file audio</span>
+    <h2 style="font-size:1.05rem;margin-bottom:8px">MP3 / M4A / WAV</h2>
+    <div class="row">
+      <input type="file" id="audioFile" accept="audio/*,.mp3,.m4a,.wav,.ogg">
+      <span class="small muted" id="audioInfo"></span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button type="button" class="primary" id="whisperBtn" disabled>Tạo transcript tự động (Whisper)</button>
+      <button type="button" id="audioManualBtn" disabled>Dùng transcript dán ở ô trên (cần mốc giờ)</button>
+    </div>
+    <div id="audioStatus" class="status" style="margin-top:12px" hidden></div>
+  </section>
+
   <!-- LIBRARY -->
   <section class="card" id="library">
     <div class="row" style="justify-content:space-between">
@@ -185,7 +202,7 @@ kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);b
       <div>
         <div class="row" style="justify-content:space-between;margin-bottom:6px">
           <span class="eyebrow">Tiến độ</span>
-          <span class="small muted" id="progressText">Câu 1 / 10</span>
+          <span class="row" style="gap:8px"><select id="rangeSel" class="small" hidden></select><span class="small muted" id="progressText">Câu 1 / 10</span></span>
         </div>
         <div class="bar"><i id="progressBar"></i></div>
       </div>
@@ -205,6 +222,7 @@ kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);b
         </div>
       </div>
       <div class="player-wrap" id="playerWrap"><div id="yt"></div></div>
+      <audio id="aud" controls preload="auto" hidden style="width:100%;margin-bottom:10px"></audio>
       <div class="sentence" id="sentence" style="margin-top:14px"></div>
       <div class="hint" id="hint"></div>
       <div class="feedback" id="feedback"></div>
@@ -239,7 +257,7 @@ kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);b
 <script>
 /* ============ STATE ============ */
 const S = {
-  videoId:null, sentences:[], order:[], idx:0, difficulty:'easy', mode:'blank',
+  videoId:null, audioUrl:null, allSentences:[], sentences:[], order:[], idx:0, difficulty:'easy', mode:'blank',
   blanks:[], total:0, correct:0, checked:false, log:[], hintUsed:false
 };
 const $ = id => document.getElementById(id);
@@ -336,16 +354,16 @@ function libSave(entry){
   renderLib();
 }
 function libRename(id,title){ libWrite(libRead().map(x=>x.id===id?{...x,title}:x)); renderLib(); }
-function libRemove(id){ libWrite(libRead().filter(x=>x.id!==id)); renderLib(); }
+function libRemove(id){ libWrite(libRead().filter(x=>x.id!==id)); idbDel(id).catch(()=>{}); renderLib(); }
 function renderLib(){
   const list=libRead(); const el=$('libList'); el.innerHTML='';
   if(!list.length){ el.innerHTML='<p class="small muted">Chưa có video nào. Lấy phụ đề thành công là video sẽ tự được lưu ở đây.</p>'; return; }
   list.forEach(x=>{
     const d=document.createElement('div'); d.className='item';
     const info=document.createElement('div');
-    info.innerHTML=`<div class="title">${esc(x.title||x.id)}</div><div class="small muted">${x.segs.length} dòng phụ đề · lưu ${new Date(x.savedAt).toLocaleDateString('vi-VN')}${x.id&&!x.id.startsWith('manual-')?' · '+esc(x.id):''}</div>`;
+    info.innerHTML=`<div class="title">${esc(x.title||x.id)}</div><div class="small muted">${x.hasAudio?'🎧 audio · ':''}${x.segs.length} dòng phụ đề · lưu ${new Date(x.savedAt).toLocaleDateString('vi-VN')}${x.id&&!x.id.startsWith('manual-')?' · '+esc(x.id):''}</div>`;
     const btns=document.createElement('div'); btns.className='row';
-    const play=document.createElement('button'); play.className='primary'; play.textContent='Học'; play.onclick=()=>begin(x.segs, x.id.startsWith('manual-')?null:x.id, {skipSave:true});
+    const play=document.createElement('button'); play.className='primary'; play.textContent='Học'; play.onclick=async()=>{ if(x.hasAudio||x.id.startsWith('audio-')){ const blob=await idbGet(x.id); if(!blob){ setStatus('Không tìm thấy file audio của bài này trong trình duyệt (có thể đã bị xóa). Hãy chọn lại file.','err'); return; } begin(x.segs,null,{skipSave:true,audioUrl:URL.createObjectURL(blob)}); } else begin(x.segs, x.id.startsWith('manual-')?null:x.id, {skipSave:true}); };
     const ren=document.createElement('button'); ren.className='ghost'; ren.textContent='Đổi tên'; ren.title='Đổi tên video';
     ren.onclick=()=>{
       const t=info.querySelector('.title'); if(t.querySelector('input')) return;
@@ -411,6 +429,11 @@ function cleanText(t){
   return t.replace(/\[[^\]]*\]|\([^)]*\)/g,' ').replace(/>>\s*/g,'').replace(/\s+/g,' ').trim();
 }
 function buildSentences(segs){
+  // Whisper output: expand segments into word-level units for precise sentence start/end (silence between sentences is skipped automatically)
+  if(segs.some(s=>s.words&&s.words.length)){
+    const u=[]; segs.forEach(s=>{ if(s.words&&s.words.length) s.words.forEach(w=>u.push({start:w.s,dur:Math.max(0.05,w.e-w.s),text:w.w})); else u.push({start:s.start,dur:(s.end!=null?s.end-s.start:s.dur)||3,text:s.text}); });
+    segs=u;
+  }
   segs = segs.map(s=>({...s,text:cleanText(s.text)})).filter(s=>s.text);
   // join with char->seg map
   let full=''; const map=[];
@@ -420,7 +443,7 @@ function buildSentences(segs){
   let pieces=[];
   const punct = full.match(/[^.!?]+[.!?]+["'”’)]*\s*/g) || [];
   const punctWords = punct.reduce((a,p)=>a+wordsOf(p),0);
-  if(punct.length>=3 && punctWords/punct.length <= 28){
+  if(punct.length>=2 && punctWords/punct.length <= 28){
     let pos=0;
     for(const p of punct){ const idx=full.indexOf(p,pos); pieces.push({text:p.trim(),pos:idx}); pos=idx+p.length; }
   }else{
@@ -498,7 +521,8 @@ function blanksFor(words){
 function startGame(){
   S.order = S.sentences.map((_,i)=>i); S.idx=0; S.total=0; S.correct=0; S.log=[];
   $('source').hidden=true; $('result').hidden=true; $('game').hidden=false;
-  $('playBtn').hidden = !S.videoId; $('autoWrap').hidden = !S.videoId;
+  const hasMedia=!!(S.videoId||S.audioUrl);
+  $('playBtn').hidden = !hasMedia; $('autoWrap').hidden = !hasMedia;
   if(S.videoId) $('playerWrap').classList.add('on');
   renderCard();
 }
@@ -530,7 +554,7 @@ function renderCard(){
   $('checkBtn').hidden=false; $('nextBtn').hidden=true; $('skipBtn').hidden=false; $('hintBtn').disabled=false;
   $('timeLabel').textContent = s.start!=null ? fmt(s.start)+(s.end?' – '+fmt(s.end):'') : '';
   updateRail();
-  if(S.videoId && s.start!=null && $('autoPlay').checked) playSeg(s); else stopPlayer();
+  if((S.videoId||S.audioUrl) && s.start!=null && $('autoPlay').checked) playSeg(s); else stopPlayer();
   const first=el.querySelector('input'); if(first) first.focus();
 }
 function fmt(t){ t=Math.max(0,Math.floor(t)); const m=Math.floor(t/60), s=t%60; return m+':'+String(s).padStart(2,'0'); }
@@ -554,7 +578,7 @@ function renderFullCard(s,tokens){
   $('checkBtn').hidden=false; $('nextBtn').hidden=true; $('skipBtn').hidden=false; $('hintBtn').disabled=false;
   $('timeLabel').textContent = s.start!=null ? fmt(s.start)+(s.end?' – '+fmt(s.end):'') : '';
   updateRail();
-  if(S.videoId && s.start!=null && $('autoPlay').checked) playSeg(s); else stopPlayer();
+  if((S.videoId||S.audioUrl) && s.start!=null && $('autoPlay').checked) playSeg(s); else stopPlayer();
   ta.focus();
 }
 /* Word-level alignment (LCS) between expected and typed words; returns which expected words were matched. */
@@ -653,8 +677,16 @@ function hideCaptions(){
   try{ player.setOption('captions','track',{}); }catch(e){}
 }
 /* Play one sentence: seek to its start, then watch currentTime and pause at its end. */
+let audTimer=null;
+function playAudioSeg(s){
+  const a=$('aud'); clearInterval(audTimer);
+  const end = s.end!=null ? s.end : s.start+4;
+  a.currentTime=Math.max(0,s.start-0.15); a.play().catch(()=>{});
+  audTimer=setInterval(()=>{ if(a.currentTime>=end+0.1){ a.pause(); clearInterval(audTimer); } },60);
+}
 function playSeg(s){
   if(s.start==null) return;
+  if(S.audioUrl) return playAudioSeg(s);
   if(!player||!playerReady){ pendingPlay=s; loadApi(); return; }
   pendingPlay=null;
   $('playerWrap').classList.add('on');
@@ -668,7 +700,7 @@ function playSeg(s){
     }catch(e){}
   },100);
 }
-function stopPlayer(){ clearInterval(watchTimer); pendingPlay=null; try{player&&player.pauseVideo&&player.pauseVideo();}catch(e){} }
+function stopPlayer(){ clearInterval(watchTimer); clearInterval(audTimer); pendingPlay=null; try{player&&player.pauseVideo&&player.pauseVideo();}catch(e){} try{ $('aud').pause(); }catch(e){} }
 
 /* ============ DICTIONARY POPOVER ============ */
 const DICT_KEY='subfill.dict.v1';
@@ -739,6 +771,54 @@ document.addEventListener('click',e=>{
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePop(); });
 
+/* ============ AUDIO FILES (IndexedDB) ============ */
+function idbOpen(){ return new Promise((res,rej)=>{ const r=indexedDB.open('subfill',1); r.onupgradeneeded=()=>r.result.createObjectStore('audio'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function idbPut(k,v){ const db=await idbOpen(); return new Promise((res,rej)=>{ const t=db.transaction('audio','readwrite'); t.objectStore('audio').put(v,k); t.oncomplete=res; t.onerror=()=>rej(t.error); }); }
+async function idbGet(k){ try{ const db=await idbOpen(); return await new Promise((res,rej)=>{ const r=db.transaction('audio').objectStore('audio').get(k); r.onsuccess=()=>res(r.result||null); r.onerror=()=>rej(r.error); }); }catch(e){ return null; } }
+async function idbDel(k){ const db=await idbOpen(); return new Promise((res,rej)=>{ const t=db.transaction('audio','readwrite'); t.objectStore('audio').delete(k); t.oncomplete=res; t.onerror=()=>rej(t.error); }); }
+async function fileHash(file){ try{ const buf=await file.slice(0,2*1024*1024).arrayBuffer(); const h=await crypto.subtle.digest('SHA-1',buf); return [...new Uint8Array(h)].slice(0,8).map(b=>b.toString(16).padStart(2,'0')).join('')+'-'+file.size; }catch(e){ return file.name+'-'+file.size; } }
+let curAudio=null;
+function setAudioStatus(msg,kind){ const el=$('audioStatus'); if(!msg){el.hidden=true;return;} el.hidden=false; el.textContent=msg; el.className='status'+(kind?' '+kind:''); }
+$('audioFile').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  curAudio=f; $('audioInfo').textContent=`${f.name} · ${(f.size/1048576).toFixed(1)} MB`;
+  $('whisperBtn').disabled=false; $('audioManualBtn').disabled=false; setAudioStatus('');
+  const id='audio-'+await fileHash(f);
+  const hit=libRead().find(x=>x.id===id);
+  if(hit) setAudioStatus('File này đã có transcript trong Thư viện ("'+(hit.title||'')+'"). Bấm "Học" ở Thư viện để dùng lại, hoặc tạo lại bên dưới.','ok');
+});
+async function startAudio(segs, title){
+  const id='audio-'+await fileHash(curAudio);
+  try{ await idbPut(id, curAudio); }catch(e){ setAudioStatus('Không lưu được audio vào trình duyệt (bài vẫn chạy, nhưng lần sau phải chọn lại file).','warn'); }
+  begin(segs, null, {id, title, audioUrl:URL.createObjectURL(curAudio)});
+}
+$('audioManualBtn').addEventListener('click',()=>{
+  if(!curAudio) return;
+  const txt=$('manualText').value.trim(); if(!txt){ setAudioStatus('Hãy dán transcript có mốc giờ (SRT/VTT hoặc dạng "0:12 câu…") vào ô ở khung trên trước.','err'); $('manual').open=true; return; }
+  const segs=parseManual(txt);
+  if(!segs.length||!segs.some(s=>s.start!=null)){ setAudioStatus('Transcript này không có mốc thời gian nên không khớp được với audio. Dùng SRT/VTT, hoặc bấm "Tạo transcript tự động".','err'); return; }
+  startAudio(segs, curAudio.name.replace(/\.[^.]+$/,''));
+});
+$('whisperBtn').addEventListener('click',async()=>{
+  if(!curAudio) return;
+  const w=getWorker(); if(!w){ setAudioStatus('Chưa có địa chỉ Worker (xem Cài đặt proxy riêng).','err'); return; }
+  if(curAudio.size>25*1024*1024){ setAudioStatus('File lớn hơn 25 MB. Hãy cắt ngắn hoặc nén xuống 64 kbps.','err'); return; }
+  $('whisperBtn').disabled=true;
+  setAudioStatus('Đang tải lên và nhận dạng giọng nói… (khoảng 1 giây cho mỗi 10–20 giây audio)');
+  try{
+    const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),180000);
+    const r=await fetch(w.replace(/\/+$/,'')+'/transcribe?lang=en',{method:'POST',headers:{'Content-Type':curAudio.type||'application/octet-stream'},body:curAudio,signal:ctrl.signal});
+    clearTimeout(t);
+    const data=await r.json().catch(()=>({error:'Worker trả về dữ liệu lạ (HTTP '+r.status+')'}));
+    if(!r.ok||data.error) throw new Error(data.error||('HTTP '+r.status));
+    const segs=(data.segs||[]).filter(s=>!(s.nsp>0.6)&&s.text);
+    if(!segs.length) throw new Error('Không nhận ra lời nói trong file.');
+    setAudioStatus(`Đã nhận dạng ${segs.reduce((a,s)=>a+(s.words?s.words.length:s.text.split(/\s+/).length),0)} từ (${data.model}).`,'ok');
+    startAudio(segs, curAudio.name.replace(/\.[^.]+$/,''));
+  }catch(e){ setAudioStatus('Lỗi: '+(e.name==='AbortError'?'quá 3 phút không có phản hồi':e.message),'err'); }
+  finally{ $('whisperBtn').disabled=false; }
+});
+
 /* ============ SAMPLE ============ */
 const SAMPLE = [
  "Good morning! Are you ready for the team meeting at ten?",
@@ -758,15 +838,37 @@ function setStatus(msg,kind){ const el=$('status'); if(!msg){el.hidden=true;retu
 function begin(segs, videoId, opts={}){
   const sents = buildSentences(segs);
   if(sents.length<2){ setStatus('Transcript quá ngắn để tạo bài tập.','err'); return; }
-  S.sentences=sents; S.videoId=videoId||null;
+  S.allSentences=sents; S.videoId=videoId||null;
+  stopPlayer();
+  if(S.audioUrl && !opts.audioUrl){ try{URL.revokeObjectURL(S.audioUrl);}catch(e){} }
+  S.audioUrl = opts.audioUrl||null;
   if(!opts.skipSave){
-    const id = videoId || ('manual-'+Date.now());
-    libSave({id, title: opts.title || (videoId ? videoId : 'Transcript dán tay '+new Date().toLocaleDateString('vi-VN')), segs});
+    const id = opts.id || videoId || ('manual-'+Date.now());
+    libSave({id, title: opts.title || (videoId ? videoId : 'Transcript dán tay '+new Date().toLocaleDateString('vi-VN')), segs, hasAudio:!!opts.audioUrl});
   }
-  $('library').hidden=true;
+  $('library').hidden=true; $('audioSource').hidden=true;
   setStatus('');
   if(S.videoId){ loadApi(); } else $('playerWrap').classList.remove('on');
+  const aud=$('aud'); aud.hidden=!S.audioUrl; if(S.audioUrl){ aud.src=S.audioUrl; aud.load(); }
+  setupRange();
   startGame();
+}
+/* Long transcripts: let the learner pick a chunk of ~15 sentences */
+const CHUNK=15;
+function setupRange(){
+  const sel=$('rangeSel'); sel.innerHTML=''; const n=S.allSentences.length;
+  if(n<=CHUNK+5){ sel.hidden=true; S.sentences=S.allSentences; return; }
+  sel.hidden=false;
+  for(let i=0;i<n;i+=CHUNK){ const o=document.createElement('option'); o.value=i; o.textContent=`Phần ${i/CHUNK+1} · câu ${i+1}–${Math.min(n,i+CHUNK)}`; sel.append(o); }
+  const all=document.createElement('option'); all.value='all'; all.textContent=`Toàn bộ (${n} câu)`; sel.append(all);
+  let saved=0; try{ saved=+sessionStorage.getItem('subfill.range.'+(S.videoId||'audio'))||0; }catch(e){}
+  sel.value=String(Math.min(saved,n-1)); if(sel.selectedIndex<0) sel.value='0';
+  applyRange();
+}
+function applyRange(){
+  const v=$('rangeSel').value; const n=S.allSentences.length;
+  S.sentences = v==='all' ? S.allSentences : S.allSentences.slice(+v, Math.min(n,+v+CHUNK));
+  try{ sessionStorage.setItem('subfill.range.'+(S.videoId||'audio'), v==='all'?'0':v); }catch(e){}
 }
 $('urlForm').addEventListener('submit',async e=>{
   e.preventDefault(); const btn=$('loadBtn'); btn.disabled=true;
@@ -791,6 +893,7 @@ $('difficulty').addEventListener('click',e=>{
   S.difficulty=b.dataset.d; [...$('difficulty').children].forEach(x=>x.setAttribute('aria-pressed',x===b));
   if(!$('game').hidden && !S.checked) renderCard();
 });
+$('rangeSel').addEventListener('change',()=>{ applyRange(); stopPlayer(); startGame(); });
 $('checkBtn').addEventListener('click',check);
 $('nextBtn').addEventListener('click',next);
 $('skipBtn').addEventListener('click',skip);
@@ -799,7 +902,7 @@ $('playBtn').addEventListener('click',()=>{ const s=S.sentences[S.order[S.idx]];
 const reset=()=>{ stopPlayer(); startGame(); };
 $('resetBtn').addEventListener('click',reset);
 $('againBtn').addEventListener('click',reset);
-const change=()=>{ stopPlayer(); $('game').hidden=true; $('result').hidden=true; $('source').hidden=false; $('library').hidden=false; renderLib(); $('playerWrap').classList.remove('on'); };
+const change=()=>{ stopPlayer(); $('game').hidden=true; $('result').hidden=true; $('source').hidden=false; $('library').hidden=false; $('audioSource').hidden=false; renderLib(); $('playerWrap').classList.remove('on'); $('aud').hidden=true; };
 $('changeBtn').addEventListener('click',change);
 $('changeBtn2').addEventListener('click',change);
 </script>
