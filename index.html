@@ -799,23 +799,73 @@ $('audioManualBtn').addEventListener('click',()=>{
   if(!segs.length||!segs.some(s=>s.start!=null)){ setAudioStatus('Transcript này không có mốc thời gian nên không khớp được với audio. Dùng SRT/VTT, hoặc bấm "Tạo transcript tự động".','err'); return; }
   startAudio(segs, curAudio.name.replace(/\.[^.]+$/,''));
 });
+/* Decode audio in the browser, resample to 16 kHz mono, cut into ~40 s chunks at quiet points, send each chunk to Whisper, merge with time offsets. */
+async function decodeTo16k(file){
+  const ab=await file.arrayBuffer();
+  const ac=new (window.AudioContext||window.webkitAudioContext)();
+  const src=await ac.decodeAudioData(ab); try{ac.close();}catch(e){}
+  const sr=16000, len=Math.ceil(src.duration*sr);
+  const oc=new OfflineAudioContext(1,len,sr);
+  const node=oc.createBufferSource(); node.buffer=src; node.connect(oc.destination); node.start(0);
+  const out=await oc.startRendering();
+  return {pcm:out.getChannelData(0), sr, duration:src.duration};
+}
+function wavFromPcm(pcm,sr){
+  const n=pcm.length, buf=new ArrayBuffer(44+n*2), v=new DataView(buf);
+  const ws=(o,s)=>{ for(let i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+  ws(0,'RIFF'); v.setUint32(4,36+n*2,true); ws(8,'WAVE'); ws(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,sr,true); v.setUint32(28,sr*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); ws(36,'data'); v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++){ const s=Math.max(-1,Math.min(1,pcm[i])); v.setInt16(44+i*2, s<0?s*0x8000:s*0x7FFF, true); }
+  return new Blob([buf],{type:'audio/wav'});
+}
+function chunkBounds(pcm,sr,target=40,win=5){
+  const frame=Math.floor(sr*0.05); const nf=Math.floor(pcm.length/frame); const rms=new Float32Array(nf);
+  for(let f=0;f<nf;f++){ let s=0; const o=f*frame; for(let i=0;i<frame;i++){ const x=pcm[o+i]; s+=x*x; } rms[f]=Math.sqrt(s/frame); }
+  const bounds=[0]; const total=pcm.length/sr;
+  for(let t=target;t<total-10;){
+    const f0=Math.max(0,Math.floor((t-win)/0.05)), f1=Math.min(nf-1,Math.floor((t+win)/0.05));
+    let best=f0, bv=Infinity; for(let f=f0;f<=f1;f++){ if(rms[f]<bv){bv=rms[f];best=f;} }
+    const cut=best*0.05; bounds.push(cut); t=cut+target;
+  }
+  bounds.push(total); return bounds;
+}
+async function transcribeChunk(workerUrl, blob){
+  const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),90000);
+  const r=await fetch(workerUrl.replace(/\/+$/,'')+'/transcribe?lang=en',{method:'POST',headers:{'Content-Type':'audio/wav'},body:blob,signal:ctrl.signal});
+  clearTimeout(t);
+  const data=await r.json().catch(()=>({error:'Worker trả về dữ liệu lạ (HTTP '+r.status+')'}));
+  if(!r.ok||data.error) throw new Error(data.error||('HTTP '+r.status));
+  return data;
+}
 $('whisperBtn').addEventListener('click',async()=>{
   if(!curAudio) return;
   const w=getWorker(); if(!w){ setAudioStatus('Chưa có địa chỉ Worker (xem Cài đặt proxy riêng).','err'); return; }
-  if(curAudio.size>25*1024*1024){ setAudioStatus('File lớn hơn 25 MB. Hãy cắt ngắn hoặc nén xuống 64 kbps.','err'); return; }
   $('whisperBtn').disabled=true;
-  setAudioStatus('Đang tải lên và nhận dạng giọng nói… (khoảng 1 giây cho mỗi 10–20 giây audio)');
   try{
-    const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),180000);
-    const r=await fetch(w.replace(/\/+$/,'')+'/transcribe?lang=en',{method:'POST',headers:{'Content-Type':curAudio.type||'application/octet-stream'},body:curAudio,signal:ctrl.signal});
-    clearTimeout(t);
-    const data=await r.json().catch(()=>({error:'Worker trả về dữ liệu lạ (HTTP '+r.status+')'}));
-    if(!r.ok||data.error) throw new Error(data.error||('HTTP '+r.status));
-    const segs=(data.segs||[]).filter(s=>!(s.nsp>0.6)&&s.text);
-    if(!segs.length) throw new Error('Không nhận ra lời nói trong file.');
-    setAudioStatus(`Đã nhận dạng ${segs.reduce((a,s)=>a+(s.words?s.words.length:s.text.split(/\s+/).length),0)} từ (${data.model}).`,'ok');
-    startAudio(segs, curAudio.name.replace(/\.[^.]+$/,''));
-  }catch(e){ setAudioStatus('Lỗi: '+(e.name==='AbortError'?'quá 3 phút không có phản hồi':e.message),'err'); }
+    setAudioStatus('Đang giải mã audio…');
+    const {pcm,sr,duration}=await decodeTo16k(curAudio);
+    const bounds=chunkBounds(pcm,sr);
+    const allSegs=[]; let model='';
+    for(let i=0;i<bounds.length-1;i++){
+      const a=Math.floor(bounds[i]*sr), b=Math.floor(bounds[i+1]*sr);
+      setAudioStatus(`Đang nhận dạng đoạn ${i+1}/${bounds.length-1} (${fmt(bounds[i])}–${fmt(bounds[i+1])} / ${fmt(duration)})…`);
+      let data=null, lastErr=null;
+      for(let attempt=0;attempt<2&&!data;attempt++){ try{ data=await transcribeChunk(w, wavFromPcm(pcm.subarray(a,b),sr)); }catch(e){ lastErr=e; } }
+      if(!data) throw new Error(`đoạn ${i+1}: `+(lastErr&&lastErr.message));
+      model=data.model||model; const off=bounds[i];
+      for(const s of (data.segs||[])){
+        if(s.nsp>0.6||!s.text) continue;
+        const words=(s.words||[]).filter(x=>x.w).map(x=>({w:x.w,s:x.s+off,e:x.e+off}));
+        // classic whisper sometimes stamps all words at the segment end: spread them evenly instead
+        if(words.length>1 && words.every(x=>x.e===words[0].e)){ const st=s.start+off, en=s.end+off, d=(en-st)/words.length; words.forEach((x,k)=>{ x.s=st+k*d; x.e=st+(k+1)*d; }); }
+        allSegs.push({start:s.start+off,end:s.end+off,text:s.text,words});
+      }
+    }
+    if(!allSegs.length) throw new Error('Không nhận ra lời nói trong file.');
+    const nWords=allSegs.reduce((n,s)=>n+(s.words.length||s.text.split(/\s+/).length),0);
+    setAudioStatus(`Đã nhận dạng ${nWords} từ trong ${bounds.length-1} đoạn (${model}).`,'ok');
+    startAudio(allSegs, curAudio.name.replace(/\.[^.]+$/,''));
+  }catch(e){ setAudioStatus('Lỗi: '+(e.name==='AbortError'?'Worker không phản hồi trong 90 giây':e.message),'err'); }
   finally{ $('whisperBtn').disabled=false; }
 });
 
