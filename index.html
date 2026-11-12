@@ -428,10 +428,32 @@ function parseManual(txt){
 function cleanText(t){
   return t.replace(/\[[^\]]*\]|\([^)]*\)/g,' ').replace(/>>\s*/g,'').replace(/\s+/g,' ').trim();
 }
+/* Whisper's word list often lacks punctuation/casing while the segment text has it: carry the text's tokens onto the words' timestamps. */
+function punctuateWords(seg){
+  const words=seg.words.map(w=>({...w})); const toks=(seg.text||'').trim().split(/\s+/).filter(Boolean);
+  if(!toks.length) return words;
+  if(toks.length===words.length){ toks.forEach((t,i)=>words[i].w=t); return words; }
+  let j=0; const out=[];
+  for(let i=0;i<words.length;i++){
+    const wn=norm(words[i].w); let took=false;
+    // look a little ahead for the matching token (tokens may be split/merged differently)
+    for(let k=j;k<Math.min(toks.length,j+3);k++){
+      const tn=norm(toks[k]);
+      if(tn===wn || (tn&&wn&&(tn.startsWith(wn)||wn.startsWith(tn)))){
+        // tokens skipped in between get glued to the previous word
+        if(k>j && out.length) out[out.length-1].w += ' '+toks.slice(j,k).join(' ');
+        out.push({...words[i], w:toks[k]}); j=k+1; took=true; break;
+      }
+    }
+    if(!took) out.push(words[i]);
+  }
+  if(j<toks.length && out.length) out[out.length-1].w += ' '+toks.slice(j).join(' ');
+  return out;
+}
 function buildSentences(segs){
   // Whisper output: expand segments into word-level units for precise sentence start/end (silence between sentences is skipped automatically)
   if(segs.some(s=>s.words&&s.words.length)){
-    const u=[]; segs.forEach(s=>{ if(s.words&&s.words.length) s.words.forEach(w=>u.push({start:w.s,dur:Math.max(0.05,w.e-w.s),text:w.w})); else u.push({start:s.start,dur:(s.end!=null?s.end-s.start:s.dur)||3,text:s.text}); });
+    const u=[]; segs.forEach(s=>{ if(s.words&&s.words.length) punctuateWords(s).forEach(w=>u.push({start:w.s,dur:Math.max(0.05,w.e-w.s),text:w.w})); else u.push({start:s.start,dur:(s.end!=null?s.end-s.start:s.dur)||3,text:s.text}); });
     segs=u;
   }
   segs = segs.map(s=>({...s,text:cleanText(s.text)})).filter(s=>s.text);
@@ -453,11 +475,13 @@ function buildSentences(segs){
     if(cur) pieces.push({text:cur,pos:curPos});
   }
   // merge very short pieces into the previous one
-  const out=[];
+  const out=[]; let carry=null;
   for(const p of pieces){
-    if(out.length && wordsOf(p.text)<4){ out[out.length-1].text+=' '+p.text; continue; }
+    if(carry){ p.text=carry.text+' '+p.text; p.pos=carry.pos; carry=null; }
+    if(wordsOf(p.text)<4){ if(out.length) out[out.length-1].text+=' '+p.text; else carry=p; continue; }
     out.push(p);
   }
+  if(carry){ if(out.length) out[out.length-1].text+=' '+carry.text; else out.push(carry); }
   return out.map(p=>{ const sg=segAt(p.pos); const end=segAt(p.pos+p.text.length-1); return {text:p.text,start:sg.start,end:(end.start!=null?end.start+end.dur:null)}; })
             .filter(s=>wordsOf(s.text)>=3);
 }
