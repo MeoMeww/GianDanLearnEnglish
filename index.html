@@ -696,7 +696,7 @@ async function lookupWord(w){
     withTimeout(fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(w)).then(r=>r.ok?r.json():null),7000).then(j=>{
       if(!Array.isArray(j)) return; const e=j[0];
       const ph=(e.phonetics||[]).find(p=>p.text&&p.audio)||(e.phonetics||[]).find(p=>p.text)||{}; out.ipa=ph.text||e.phonetic||''; out.audio=((e.phonetics||[]).find(p=>p.audio)||{}).audio||'';
-      const m=(e.meanings||[])[0]; if(m&&m.definitions[0]) out.en=(m.partOfSpeech?m.partOfSpeech+' · ':'')+m.definitions[0].definition;
+      const m=[...(e.meanings||[])].sort((a,b)=>(b.definitions||[]).length-(a.definitions||[]).length)[0]; if(m&&m.definitions[0]) out.en=(m.partOfSpeech?m.partOfSpeech+' · ':'')+m.definitions[0].definition;
     }).catch(()=>{}),
     withTimeout(fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q='+encodeURIComponent(w)).then(r=>r.json()),7000)
       .then(j=>{ out.vi=(j[0]||[]).map(x=>x[0]).join('').trim(); })
