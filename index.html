@@ -106,6 +106,20 @@ details{margin-top:8px}
 .lib .item>div{min-width:0}
 .lib .title{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lib .item button{padding:6px 12px}
+.w{cursor:pointer;border-radius:4px;padding:0 2px}
+.w:hover{background:var(--accent-soft)}
+.w.adv{text-decoration:underline dotted var(--warn);text-underline-offset:4px}
+.pop{position:absolute;z-index:50;max-width:min(360px,calc(100vw - 32px));background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.18);font-size:.95rem;font-weight:500;line-height:1.45}
+.pop .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.pop .word{font-weight:800;font-size:1.1rem}
+.pop .ipa{font-family:var(--font-mono);color:var(--muted)}
+.pop .lvl{font-size:.7rem;font-weight:800;letter-spacing:.06em;padding:2px 6px;border-radius:5px;background:var(--warn-soft);color:var(--warn)}
+.pop .vi{font-weight:700;color:var(--accent);margin:4px 0}
+.pop .en{color:var(--muted);font-size:.88rem}
+.pop .ft{display:flex;gap:10px;margin-top:8px;font-size:.85rem;flex-wrap:wrap}
+.pop a{color:var(--accent);font-weight:700}
+.pop button.spk{padding:2px 8px;font-size:1rem;line-height:1}
+.pop .x{position:absolute;top:6px;right:8px;border:0;background:none;padding:2px 6px;font-size:1rem;color:var(--muted)}
 kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);border-radius:5px;padding:1px 5px;background:var(--surface-2)}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 @media (max-width:480px){.sentence{font-size:1.2rem}.score-big{font-size:3rem}}
@@ -509,8 +523,9 @@ function renderCard(){
       inp.id='blank-'+i; inp.style.width=Math.max(5,core.length+2)+'ch'; inp.setAttribute('aria-label','Từ còn thiếu'); inp.dataset.i=i;
       inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); S.checked?next():check(); } });
       span.append(inp); if(post) span.append(post); el.append(span);
-    }else{ const w=document.createElement('span'); w.textContent=t; el.append(w); }
+    }else{ const w=document.createElement('span'); w.textContent=t; const c=norm(t); if(c.length>=3&&/[a-z]/.test(c)){ w.className='w'; w.dataset.w=c; } el.append(w); }
   });
+  markLevels(el);
   $('hint').textContent=''; $('feedback').textContent=''; $('feedback').className='feedback';
   $('checkBtn').hidden=false; $('nextBtn').hidden=true; $('skipBtn').hidden=false; $('hintBtn').disabled=false;
   $('timeLabel').textContent = s.start!=null ? fmt(s.start)+(s.end?' – '+fmt(s.end):'') : '';
@@ -558,8 +573,8 @@ function checkFull(){
   S.total+=total; S.correct+=ok;
   $('fullInput').disabled=true; $('mask').remove();
   const diff=document.createElement('div'); diff.className='diff';
-  let k=0; tokens.forEach(t=>{ const sp=document.createElement('span'); if(norm(t)){ sp.className=matched[k]?'ok':'miss'; k++; } sp.textContent=t; diff.append(sp); });
-  $('sentence').prepend(diff);
+  let k=0; tokens.forEach(t=>{ const sp=document.createElement('span'); if(norm(t)){ sp.className=(matched[k]?'ok':'miss')+' w'; sp.dataset.w=norm(t); k++; } sp.textContent=t; diff.append(sp); });
+  $('sentence').prepend(diff); markLevels(diff);
   S.fullWords.forEach((w,wi)=>{ if(!matched[wi]) S.log.push({sentence:s.text, word:w, given:'(thiếu/sai)', ok:false}); });
   const fb=$('feedback'); fb.textContent = ok===total ? `Chính xác! ${ok}/${total} từ` : `Đúng ${ok}/${total} từ`; fb.className='feedback '+(ok===total?'ok':'bad');
   $('checkBtn').hidden=true; $('nextBtn').hidden=false; $('skipBtn').hidden=true; $('hintBtn').disabled=true;
@@ -572,7 +587,7 @@ function check(){
   S.blanks.forEach(b=>{
     const inp=$('blank-'+b.i); const v=norm(inp.value); const good=v===b.core;
     inp.disabled=true; inp.classList.add(good?'ok':'bad');
-    if(good) ok++; else { const a=document.createElement('span'); a.className='answer'; a.textContent=b.display; inp.after(' ',a); }
+    const a=document.createElement('span'); a.className='answer w'; a.dataset.w=b.core; a.textContent=b.display; if(good){ ok++; a.style.display='none'; } inp.after(' ',a); if(good){ inp.classList.add('w'); inp.dataset.w=b.core; }
     S.log.push({sentence:S.sentences[S.order[S.idx]].text, word:b.display, given:inp.value, ok:good});
   });
   S.total+=S.blanks.length; S.correct+=ok;
@@ -654,6 +669,75 @@ function playSeg(s){
   },100);
 }
 function stopPlayer(){ clearInterval(watchTimer); pendingPlay=null; try{player&&player.pauseVideo&&player.pauseVideo();}catch(e){} }
+
+/* ============ DICTIONARY POPOVER ============ */
+const DICT_KEY='subfill.dict.v1';
+let dictCache={}; try{ dictCache=JSON.parse(localStorage.getItem(DICT_KEY)||'{}'); }catch(e){}
+function dictSave(){ try{ const ks=Object.keys(dictCache); if(ks.length>1500) ks.slice(0,ks.length-1500).forEach(k=>delete dictCache[k]); localStorage.setItem(DICT_KEY,JSON.stringify(dictCache)); }catch(e){} }
+const withTimeout=(p,ms)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
+async function lookupFreq(w){
+  const k='f:'+w; if(k in dictCache) return dictCache[k];
+  let f=null;
+  try{ const r=await withTimeout(fetch('https://api.datamuse.com/words?sp='+encodeURIComponent(w)+'&md=f&max=1'),6000); const j=await r.json();
+    if(j[0]&&j[0].word===w){ const t=(j[0].tags||[]).find(x=>x.startsWith('f:')); if(t) f=parseFloat(t.slice(2)); } }catch(e){}
+  dictCache[k]=f; dictSave(); return f;
+}
+/* Rough CEFR from frequency per million words (Datamuse): very common words are A1–B1, rarer ones B2+. */
+function levelOf(f){ if(f==null) return null; if(f>=40) return 'A1'; if(f>=15) return 'A2'; if(f>=6) return 'B1'; if(f>=2) return 'B2'; if(f>=0.5) return 'C1'; return 'C2'; }
+async function markLevels(container){
+  const els=[...container.querySelectorAll('.w[data-w]')];
+  const words=[...new Set(els.map(e=>e.dataset.w))].filter(w=>!STOP.has(w.replace(/'/g,'')));
+  await Promise.all(words.map(async w=>{ const lv=levelOf(await lookupFreq(w)); if(lv&&/^(B2|C1|C2)$/.test(lv)) els.filter(e=>e.dataset.w===w).forEach(e=>{ e.classList.add('adv'); e.title='Từ cấp '+lv+' – bấm để xem nghĩa'; }); }));
+}
+async function lookupWord(w){
+  const k='d:'+w; if(dictCache[k]) return dictCache[k];
+  const out={word:w,ipa:'',audio:'',en:'',vi:''};
+  const tasks=[
+    withTimeout(fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(w)).then(r=>r.ok?r.json():null),7000).then(j=>{
+      if(!Array.isArray(j)) return; const e=j[0];
+      const ph=(e.phonetics||[]).find(p=>p.text&&p.audio)||(e.phonetics||[]).find(p=>p.text)||{}; out.ipa=ph.text||e.phonetic||''; out.audio=((e.phonetics||[]).find(p=>p.audio)||{}).audio||'';
+      const m=(e.meanings||[])[0]; if(m&&m.definitions[0]) out.en=(m.partOfSpeech?m.partOfSpeech+' · ':'')+m.definitions[0].definition;
+    }).catch(()=>{}),
+    withTimeout(fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q='+encodeURIComponent(w)).then(r=>r.json()),7000)
+      .then(j=>{ out.vi=(j[0]||[]).map(x=>x[0]).join('').trim(); })
+      .catch(()=>withTimeout(fetch('https://api.mymemory.translated.net/get?q='+encodeURIComponent(w)+'&langpair=en|vi').then(r=>r.json()),7000).then(j=>{ out.vi=(j.responseData||{}).translatedText||''; }).catch(()=>{}))
+  ];
+  await Promise.all(tasks);
+  if(out.vi||out.en||out.ipa){ dictCache[k]=out; dictSave(); }
+  return out;
+}
+let popEl=null;
+function closePop(){ if(popEl){ popEl.remove(); popEl=null; } }
+function speak(w,audio){
+  if(audio){ const a=new Audio(audio); a.play().catch(()=>speakTTS(w)); } else speakTTS(w);
+}
+function speakTTS(w){ try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(w); u.lang='en-US'; u.rate=0.9; speechSynthesis.speak(u); }catch(e){} }
+async function showPop(target){
+  closePop();
+  const w=target.dataset.w; if(!w) return;
+  const pop=document.createElement('div'); pop.className='pop'; pop.setAttribute('role','dialog');
+  pop.innerHTML=`<button class="x" aria-label="Đóng">×</button><div class="hd"><span class="word">${esc(w)}</span><span class="ipa">…</span></div><div class="vi">Đang tra…</div>`;
+  document.body.append(pop); popEl=pop;
+  const r=target.getBoundingClientRect(); const top=r.bottom+window.scrollY+8; let left=r.left+window.scrollX; left=Math.min(left,window.scrollX+document.documentElement.clientWidth-pop.offsetWidth-16); pop.style.top=top+'px'; pop.style.left=Math.max(8,left)+'px';
+  pop.querySelector('.x').onclick=closePop;
+  const [d,f]=await Promise.all([lookupWord(w),lookupFreq(w)]);
+  if(popEl!==pop) return;
+  const lv=levelOf(f);
+  pop.innerHTML=`<button class="x" aria-label="Đóng">×</button>
+    <div class="hd"><span class="word">${esc(w)}</span>${d.ipa?`<span class="ipa">${esc(d.ipa)}</span>`:''}<button type="button" class="spk" title="Phát âm">🔊</button>${lv?`<span class="lvl">${lv}</span>`:''}</div>
+    <div class="vi">${d.vi?esc(d.vi):'Không tra được nghĩa (kiểm tra mạng).'}</div>
+    ${d.en?`<div class="en">${esc(d.en)}</div>`:''}
+    <div class="ft"><a href="https://www.oxfordlearnersdictionaries.com/definition/english/${encodeURIComponent(w)}" target="_blank" rel="noopener">Oxford ↗</a><a href="https://dictionary.cambridge.org/dictionary/english-vietnamese/${encodeURIComponent(w)}" target="_blank" rel="noopener">Cambridge Anh–Việt ↗</a></div>`;
+  pop.querySelector('.x').onclick=closePop;
+  pop.querySelector('.spk').onclick=()=>speak(w,d.audio);
+  left=Math.min(r.left+window.scrollX,window.scrollX+document.documentElement.clientWidth-pop.offsetWidth-16); pop.style.left=Math.max(8,left)+'px';
+}
+document.addEventListener('click',e=>{
+  const t=e.target.closest('.w[data-w]');
+  if(t && !(t.tagName==='INPUT' && !t.disabled)){ e.preventDefault(); showPop(t); return; }
+  if(popEl && !e.target.closest('.pop')) closePop();
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePop(); });
 
 /* ============ SAMPLE ============ */
 const SAMPLE = [
