@@ -72,8 +72,13 @@ details{margin-top:8px}
 .stats span{display:block;font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
 
 /* sentence card */
-.sentence{font-size:1.45rem;line-height:1.9;font-weight:600;display:flex;flex-wrap:wrap;gap:0 .45ch;align-items:baseline}
-.blank{display:inline-block;font-family:var(--font-mono);font-size:1.1rem;font-weight:500;background:var(--surface-2);border:0;border-bottom:2px solid var(--accent);border-radius:6px 6px 0 0;padding:2px 8px;color:var(--fg);text-align:center;min-width:5ch;vertical-align:baseline}
+.sentence{font-size:1.35rem;line-height:1.5;font-weight:600;display:flex;flex-wrap:wrap;gap:12px .5ch;align-items:center}
+.sentence>span{display:inline-flex;align-items:center;white-space:nowrap}
+.blank{display:inline-block;font-family:var(--font-mono);font-size:1rem;font-weight:500;line-height:1.3;background:var(--surface-2);border:0;border-bottom:2px solid var(--accent);border-radius:6px 6px 0 0;padding:3px 6px;margin:0 2px;color:var(--fg);text-align:center;min-width:4ch;max-width:16ch;height:1.9em;vertical-align:middle}
+.full{width:100%;min-height:96px;font-family:var(--font-body);font-size:1.15rem;font-weight:600;line-height:1.5;resize:vertical}
+.diff{display:flex;flex-wrap:wrap;gap:8px .5ch;font-size:1.25rem;font-weight:600;line-height:1.5;margin-top:12px}
+.diff .ok{color:var(--ok)} .diff .miss{color:var(--bad);background:var(--bad-soft);border-radius:6px;padding:0 6px}
+.mask{letter-spacing:.08em;color:var(--muted)}
 .blank:focus{outline:none;background:var(--accent-soft)}
 .blank.ok{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
 .blank.bad{background:var(--bad-soft);border-color:var(--bad);color:var(--bad);text-decoration:line-through}
@@ -114,11 +119,12 @@ kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);b
       <p class="muted small">Điền từ còn thiếu trong phụ đề video YouTube. Chấm trên thang 100.</p>
     </div>
     <div class="row">
-      <span class="eyebrow">Độ khó</span>
-      <div class="seg" id="difficulty" role="group" aria-label="Độ khó">
-        <button type="button" data-d="easy" aria-pressed="true">Easy · 1 từ</button>
-        <button type="button" data-d="normal" aria-pressed="false">Normal · 2 từ</button>
-        <button type="button" data-d="hard" aria-pressed="false">Hard · 3–4 từ</button>
+      <span class="eyebrow">Chế độ</span>
+      <div class="seg" id="difficulty" role="group" aria-label="Chế độ">
+        <button type="button" data-d="easy" aria-pressed="true">Easy · 2 từ</button>
+        <button type="button" data-d="normal" aria-pressed="false">Normal · 3–4</button>
+        <button type="button" data-d="hard" aria-pressed="false">Hard · 4–6</button>
+        <button type="button" data-d="full" aria-pressed="false">Full · cả câu</button>
       </div>
     </div>
   </header>
@@ -219,11 +225,10 @@ kbd{font-family:var(--font-mono);font-size:.75rem;border:1px solid var(--line);b
 <script>
 /* ============ STATE ============ */
 const S = {
-  videoId:null, sentences:[], order:[], idx:0, difficulty:'easy',
+  videoId:null, sentences:[], order:[], idx:0, difficulty:'easy', mode:'blank',
   blanks:[], total:0, correct:0, checked:false, log:[], hintUsed:false
 };
 const $ = id => document.getElementById(id);
-const BLANKS = {easy:1, normal:2, hard:3};
 
 /* ============ SOURCE: YOUTUBE ============ */
 function parseVideoId(u){
@@ -422,18 +427,59 @@ function buildSentences(segs){
 
 /* ============ GAME ============ */
 const norm = w => w.toLowerCase().replace(/[^a-z0-9']/g,'').replace(/^'+|'+$/g,'');
+/* Is this token likely a PERSON's name? Places, nationalities and numbers stay in play.
+   Signals: capitalized mid-sentence AND (next to another capitalized mid-sentence word, or after a title/honorific). */
+const NAMES=new Set("aaliyah aaron abbie abby abdiel abdul abdullah abdulrahman abe abel abigail abigayle abraham achilles ada adaline adalyn adalynn adam addison adel adelaide adele adelina adeline aden aditi adolfo adonis adrian adriana adriel adrienne agatha agnes agustin ahmad ahmed aidan aiden aiko aileen aimee ainsley aisha aisling ajay akari akira alaina alan alana alanna alastair albert alberta albertine alden aleah alec alejandra alejandro aleksander alessandro alessia alexa alexander alexandra alexandria alexei alexia alexis alfonso alfred alfreda alfredo ali alice alina alison alistair alistaire aliyah allan allegra allie allison alma alonso alonzo alphonse alta altagracia althea alvaro alvin alyson alyssa amadeus amalia amanda amani amara amari amaya amber ambrose amelia amelie americo amias amie amina amir amira amit amos amr amy anabel ananya anastasia anders anderson andie andre andrea andreas andres andrew angel angela angelica angelina angelique angelo angie anguel anh anika anil anisa anita anjali ann anna annabelle annalise annette annie annika anselm anson anthony antoine antoinette antonella antonia antonio anya aoi apollo aquila arabella arabelle araceli aramis archer archie arden ari aria ariadne ariana arianna ariel arjan arjun arlene arlo armando armani arnaud arnav arnold arthur arturo arvin arya aryan asa asher ashlee ashleigh ashley ashton aspen astrid atlas aubree aubrey aubrie audra audrey augusta augustine augusto aurelia aurelio aurora aurore autumn ava avery avi aviva axel axton aya ayaan ayden ayesha ayla azalea aziz bailee bailey baldwin baptiste barbara barbra barnaby barrett barry bart bassam bastian baxter baylor beatrice beatrix beatriz beau beckett beckham becky belinda bella ben benedict benicio benita benjamin bennett benny bentlee bentley berenice bernadette bernard bernardo bernice bert bertha bertram beryl beth bethany betsy bettie betty beverly bexley bianca bilal billie billy binh blaine blair blaise blake blanca blanche blaze bob bobbie bobby bodhi bonita bonnie boris bowen boyd brad braden bradford bradley brady bram brandi brandon brandy branson braxton brayden braylon brecken brenda brenna brennan brent brett brian brianna bridget bridgette brielle briggs brigitte britney brittany brittney brock broderick brody bronson brooke brooks bruce bruno bryan bryce brynlee brynn buck buddy burton byron cade caden cadence caesar caiden cal caleb callie calliope callum calvin camden camdyn cameron camila camille camilo campbell canaan candace candela candice candy cannon cara carina carl carla carlene carlo carlos carly carmela carmelo carmen carmine carol carole caroline carolyn carrie carsen carson carter carys casandra casey casimir caspian cassandra cassidy cassie cassius castiel catalina catherine cathy cato cayden cayson cecelia cecil cecilia cecily cedric celeste celestine celia celina cesar chad chaim chance chandler chandra channing charleigh charlene charles charley charlie charlize charlotte charmaine chase chasity chaya chaz chelsey chen cherie cherry cheryl chester chiara chloe chris chrissy christa christabel christian christie christina christine christopher christy chuck cian cillian cindy claire clara clarence clarissa clark claude claudette claudia clayton clementina clementine cleo clifford clint clive clyde cody coen cohen colby cole coleman colette colin colleen collin colt colton conner connie connor conrad constance constantine consuelo cooper cora coral corbin cordelia corey corina corinne cormac cornelia cornelius cosette cosimo courtney craig creed crew crispin cristian cristina cristobal cristopher cruz crystal cullen curtis cynthia cyrus dahlia daiki daisy dale dalia dalton damaris damian damien damon dan dana dane danette dani danica daniel daniela danielle danny dante daphne dario darius darla darlene darnell darren darryl dash dashiell dave davi david davion davis dawn dawson dax daxton dayana deacon dean deana deandre deangelo deanna debbie deborah debra declan dee deepak deidre deirdre delaney delbert delia delilah della delores delphine demetrius dena denis denise dennis derek derrick desiree desmond destiny dev devin devon dewey dexter diana diane dianne dick diego dieter dillon dimitri dina dion dirk divya dixie dmitri dolly dolores dominic dominick dominik dominique don donald donna donnie donovan dora doreen dorian doris dorothea dorothy dot doug dougie douglas drake draven drew duane duc dudley dulce duncan dung dustin dwayne dwight dylan eamon earlene easton ebony ed eddie eddy eden edgar edison edith edmond edmund edna eduarda eduardo edward edwin effie efrain eileen eitan elaina elaine eleanor eleanora elena eli elian eliana elias eliel elijah elina elio eliott elisa elisabeth elise elisha eliza elizabeth ella elle ellen ellery elliana ellie elliot elliott ellis elma elmer elnora elodie eloise eloy elsa elsie elton elvira elvis emanuel ember emelia emerald emerson emersyn emery emil emilia emiliana emiliano emilie emilio emily emma emmaline emmanuel emmanuelle emmett emmy enoch enrique enzo ephraim eren eric erica erik erika erin erma ernest ernestine ernesto ernie ervin esm esmeralda esperanza essie esteban estela estelle esther estrella ethan ethel etienne etta eugene eugenia eugenio eula eunice eva evan evander evangelina evangeline eve evelina evelyn everett everleigh everly evie ezekiel ezequiel ezra fabian fabiana fabio fadi fahad faisal faith fallon fannie farah farid farrah fatima faustino fay faye felicia felicity felipe felix feng ferdinand fern fernanda fernando fidel finley finn fiona fitzgerald fletcher flora flossie floyd flynn ford forrest fran frances francesca francine francisca francisco franco frank frankie franklin franz fred freda freddie frederick freya frida frieda gabriel gabriella gael gail gale galen gareth garrett garrison gary gaspar gavin gavriel gay gayle gemma gena genaro genesis geneva genevieve geoffrey george georgie georgina gerald geraldine gerard gerardo gertrude gianluca gianna gideon gigi gilbert gilberto gilda gina ginger ginny gino giorgio giovanna giovanni giselle giulia giuseppe gladys glen glenda glenn gloria godfrey goldie gonzalo gordon grace gracie graciela grady graeme graham grant gray grayson greg gregor gregory greta gretchen greyson griffin guadalupe guillermo gunnar gus gustavo gwen gwendolyn gwyneth hadassah hadley hadrian hai hailee hailey hal hala haley hallie hamad hamid hamish hamza hana hani hank hanna hannah hannes hans hao harlan harley harlow harmony harold harper harriet harrison harry haruto harvey hassan hattie haven hayden hayes hazel hazem heath heather hector heidi helen helena helene helga hendrix henrietta henrik henry herbert herman hernan hezekiah hiba hilary hilda hillary hiroshi hoa holden hollie hollis holly homer honor hope horace horatio hossam howard hubert huda hudson hugh hugo humberto hung hunter huong hussein huxley hyejin ian ibrahim ida ignacio ignatius ihab ike ilan ilene iliana imani imelda imogen imogene imran ina indigo ines inez ingrid irene iris irma irving isaac isabel isabella isabelle isadora isaiah isiah isidro isla ismael itzel iva ivan ivanna ivo ivy izabella izzy jabari jace jacinta jack jackie jaclyn jacob jacoby jacqueline jada jade jaden jadiel jagger jaime jair jairo jake jalen jamal jamari james jameson jami jamie jamir jan jana jane janelle janet janice janie janine janiya jaquan jared jarvis jasiah jasmin jasmine jason jasper javier jaxon jaxson jay jayden jaylen jaylin jayne jayson jaziel jean jeanette jeanie jeanne jeannette jeannie jed jedidiah jeff jefferson jeffrey jemma jenifer jenna jennifer jenny jenson jeremiah jeremias jeremy jeri jericho jermaine jerome jerri jerrod jerry jess jessa jesse jessica jessie jesus jett jewel jian jihoon jill jillian jim jimena jimmy jisoo jiwoo jo joan joann joanna joanne joaquin jocelyn jodi jodie jody joe joel joelle joey johan johanna john johnnie johnny jolene jolie jon jonael jonah jonas jonathan jonathon joni jordyn jorge jose josefa josefina joseph josephine josh joshua josiah josie josue jovani jovanni joy joyce juan juana juanita judah jude judi judith judson judy jules julia julian juliana julianne julie juliet julieta juliette julio jun jungkook junior juniper justin justine justus kade kaden kadence kai kaia kaiden kaiser kaitlin kaitlyn kaito kaleb kalel kamal kamari kamden kamila kamryn kane kara karan kareem karen kari karim karin karl karla karsyn karyn kase kasey kason kassandra kataleya katarina kate katelyn katherine kathie kathleen kathryn kathy katia katie katrina kavya kay kayden kaye kayla kaylee kaysen keanu keaton keegan keenan keira keisha keith kellan kellen kelley kelli kellie kelly kelsey kelvin kemper ken kendal kendall kendra kendrick kenji kennedi kennedy kenneth kenny kent kenzie keon keri kerri kerry kevan kevin keyla khalid khalil khloe kian kiera kieran killian kim kimber kimberly kingsley kinley kinsley kira kiran kirk kirsten kitty knox koa kobe koda kody kole konstantin kourtney krista kristen kristi kristie kristin kristina kristine kristoff kristopher kristy krystal kurt kyla kylan kyle kylen kyler kylian kylie kyra lacey lachlan lacy ladonna laila lainey lakeisha lamar lamont lan lana lance landen landon lane langston lara larissa larry lars latasha latonya latoya laura laurel lauren laurie lauryn laverne lawrence lawson layla layne lazarus lea leah leandro leann leanna leanne lee legend leif leigh leila leilani lela leland lena lennon lennox lenny lenora leo leola leon leona leonard leonardo leonel leonidas leopold leroy leslie lester leticia letitia levi lewis lexi li liam liana lila lilia lilian liliana lillian lillie lillith lilly lily lilyana lina linda lindsay lindsey linh linus lionel lisa lisandro livia liz liza lizbeth lizzie lloyd lochlan logan lois lola lolita londyn long lonnie lora loraine lorelai lorelei loren lorena lorene lorenzo loretta lori lorie lorna lorraine lotte lottie lou louella louie louis louisa louise lourdes lowell lowen luann luca lucas lucia lucian luciana luciano lucile lucille lucinda lucius lucy ludwig luella luis luka lukas luke lula luna lupe luther luz lyanna lydia lyla lyle lynda lyndon lynette lynn lynne lyric mabel mable macey maci mack mackenzie macy maddox madeleine madeline madelyn madge madilyn mae magdalena maggie magnolia magnus mahmoud mai maisie maja majid makai makayla makenna makenzie malachi malaya malcolm malia malik mallory mamie mandy manny manuel manuela mara marcel marcella marcelo marci marcia marco marcos marcus marcy margaret margarita margie margo marguerite mari maria mariam marian mariana marianne mariano maribel maricela marie marilena marilyn marina mario marion marisa marisela marisol marissa marjorie mark marla marlene marley marlon marlowe marquis marsha marshall marta martha martin martina marty marva marvin mary maryam maryann maryellen marylou mason mateo mateus mathew mathias matias matilda matthew mattias mattie maude maureen maurice maverick mavis max maximilian maximo maxine maxton maxwell maya mckenna mckenzie mckinley meagan meera megan meghan mei melanie melany melba melinda melissa melody melva melvin mercedes mercy meredith merle merrick mervin messiah mia micaela micah michael michaela michele michelle miguel mikael mikaela mikayla mike mila milana mildred milena miles miller millicent millie milo milton mindy minerva ming minh minho minjun minnie minseo mira mirabel miranda miriam misael misty mitch mitchell mitzi mo mohamed mohammed moises mollie molly mona monica monique monte montgomery mordecai morgan moriah morris moses mostafa muhammad muriel murphy murray musa mustafa mya myles myra myrna myron myrtle nabil nadia nadine nadir nahla nala nam namjoon nan nancy nanette nannie naomi nash nasir nasser natalia natalie nataly natasha nathalie nathan nathaniel navy nayeli neal ned neha nehemiah neil nell nellie nelly nelson neo nestor nettie neva nevaeh newton ngoc nguyen nia nicholas nichole nick nickolas nico nicolas nicole nigel nikhil nikki nikolai nikolas nina nita nixon noa noah noe noel noelani noelle noemi nola nolan nona noor nora norah noreen norma norman nour nova nyla oakley octavia odessa odette odin ofelia ola olga olin olive oliver olivia ollie omar omari onyx opal ophelia ora orion orville oscar osvaldo otis otto owen pablo paisley paloma pam pamela paola parker pascal patience patrice patricia patrick patsy patti patty paul paula paulette paulina pauline paxton pearl pearlie pedro peggy penelope penny percy perla perry persephone pete peter petra peyton phil philip phineas phoebe phuong phyllis pierce pierre piper pippa polly pooja porter presley preston priscilla priya prudence quentin quincy quinn quintin quinton rachel rae raelynn rafael rafaela rahul raina raj ralph rami ramiro ramon ramona ramsey randall randi randolph randy rania raphael raphaela raquel rashid raul raven ravi rayan raymond rayna reagan reba rebeca rebecca rebekah reece reem reese regina reginald reid reign remi remington remy ren rena renata rene renee reva rex reynaldo rhea rhett rhoda rhonda rhys ricardo richard rick ricky rico riku riley rin rio rita river riya rob robbie robert roberta roberto robin robyn rocco rochelle rocky rod roderick rodney rodolfo rodrigo rogelio roger rohan roland rolando romeo ronald ronan ronda ronin ronnie rory rosa rosalie rosalind rosalyn rosanne rosario rose roseann roselyn rosemarie rosemary rosetta rosie roslyn ross rowan rowena roxana roxanne roxie roy royal royce ruben ruby rudolph rudy rufus rupert russ russell rusty ruth ruthie ryan ryder ryker rylan rylee ryleigh ryo saad sabina sabrina sadie sage said sakura sal saleh salem sallie sally salma salome salvador salvatore samantha samara sami samir sammy samuel sana sandra sandro sandy sanjay santiago santino santos saoirse sara sarah sarai sasha saud saul saundra savanna sawyer scarlet scarlett scott scotty scout seamus sean sebastian selah selena selina selma seojun seoyeon seraphina serena serenity sergio seth shana shane shanna shannon shari sharla sharon shaun shawn shawna shea sheena sheila shelby sheldon shelia shelley shelly sheree sheri sherif sherman sherri sherry sheryl shiloh shirley shreya siddharth sidney sienna sierra sigrid silas silvia simeon simon simone sincere sky skye skylar slade sloane socorro sofia sofie sol solange soledad solomon son sondra sonia sonja sonny sonya sophia sophie soren sota spencer stacey staci stacie stacy stan stanley stefan stefanie stefano stella stellan stephanie stephen sterling stetson steve steven stevie stewart stuart sullivan sultan summer sunny suresh susan susana susanna susanne susie sutton suzanne suzette sybil sylas sylvester sylvia sylvie tabitha tadeo taehyung takeshi talal talia tamara tameka tamer tami tamika tammie tammy tamsin tania tanner tanya tao tara tarek tariq tasha tatiana tatum tavian taylor teagan ted teddy tennyson teodoro tera teresa teri terra terrance terrell terrence terri terrie terry tessa thaddeus thao thea thelma theo theodora theodore theresa therese thiago thomas thomasina thor tia tiago tiffany tilly tim timothee timothy tina tobias toby todd tom tomas tommy toni tony tonya torin tracey traci tracie tracy trang travis trent trevor trey tricia trina trinity tripp trisha tristan trudy tuan tucker turki twila ty tyler tyra tyrone tyson ulysses uriel ursula valarie valentin valentina valentino valeria valerie valery vance vanessa vanya varun vaughn velma vera vern verna vernon veronica vicente vicki vickie vicky victor victoria vida viggo vijay vikram vilma vince vincent vincenzo viola violet virgie virgil vivian viviana vivienne vonda wade wael waldo walid wallace walter wanda ward warren waylon wayne wei wells wendell wendi wendy wesley westley weston whitney wilbur wilda wilder wilfred wilfredo wilhelm willa willard william willie willow wilma wilson winifred winnie winona winston winter wolfgang woodrow wren wyatt xander xavier ximena xiomara yadiel yael yahir yair yandel yara yareli yasir yasmin yasmine yehuda yesenia yolanda yong yosef yousef youssef yui yuki yuna yuri yusuf yvette yvonne zachariah zachary zack zackary zaid zaiden zainab zander zane zara zaria zavier zayden zaylee zayn zechariah zeke zelda zephyr ziad zion zoe zoey zola zuri".split(' '));
+const TITLES=new Set(['mr','mrs','ms','miss','dr','prof','professor','sir','lady','lord','king','queen','prince','princess','president','captain','general','saint','st','uncle','aunt','mister','madam','señor','senor','monsieur','madame','emperor','sultan','duke','duchess','pope','judge','officer','coach','doctor']);
+function isCapMid(tokens,i){
+  if(i<0||i>=tokens.length) return false;
+  const t=tokens[i].replace(/^[^A-Za-z]+/,''); if(!/^[A-Z][a-z]/.test(t)) return false;   // Capitalized word (not ALLCAPS, not number)
+  if(i===0) return false;                                                                   // sentence start
+  if(/[.!?]["'”’)]*$/.test(tokens[i-1])) return false;                                       // after a sentence end
+  return true;
+}
+function isPersonName(tokens,i){
+  if(!isCapMid(tokens,i)) return false;
+  if(NAMES.has(norm(tokens[i]))) return true;                                  // common first name
+  if(isCapMid(tokens,i-1) || isCapMid(tokens,i+1)) return true;                // "Elsa Schiaparelli", "Lewis Carroll's"
+  const prev=norm(tokens[i-1]||''); if(TITLES.has(prev)) return true;          // "Dr Smith", "King Henry"
+  const next=tokens[i+1]||''; if(/^[A-Z]\.$/.test(next)) return true;          // "Alison L. Goodrum"
+  if(/^[A-Z]\.$/.test(tokens[i-1]||'')) return true;
+  return false;
+}
+const STOP=new Set("a about above across after again against all along already also although always am among an and another any are arent around as at be because been before behind being below between beyond both but by came can cannot cant come comes coming could couldnt despite did didnt do does doesnt doing done dont down during each eight either else even ever every few five for four from get gets getting go goes going gone got had hadnt has hasnt have havent having he her here heres hers herself hes him himself his hmm i id if ill im in into is isnt it its itself ive just least less lets like many may me might mine more most much must my myself near neither never nine no nor not nt of off often oh ok okay on once one only onto or other ought our ours ourselves out over own per quite rather really same seven several shall she shes should shouldnt since six so some sometimes still such ten than that thats the their theirs them themselves then there theres these they theyd theyll theyre theyve thing things this those though three through to too toward towards two uh um under unless until up upon us very via was wasnt way we wed well went were werent weve what whatever whats when where whether which while who whoever whom whos whose will with within without wont would wouldnt yeah yes yet you youd youll your youre yours yourself yourselves youve".split(' '));
+/* Words that flip or sharpen the meaning of a sentence even though they are "small": negation, quantity, degree, comparison, condition, time order, modality. */
+const MEANING=new Set("not never no none nothing nobody nowhere neither nor without unless except only just even always usually often rarely seldom sometimes already still yet ever more less most least fewer fewest better best worse worst bigger smaller higher lower earlier later before after until since because although though however instead despite whereas while unlike against both all every each any some few several many much enough too very almost nearly exactly about around over under at least mostly entirely completely partly first last next previous same different another other must should cannot can't won't shouldn't mustn't couldn't wouldn't didn't doesn't don't isn't aren't wasn't weren't hasn't haven't hadn't rather actually really finally eventually suddenly immediately once twice half double".split(' '));
+const CONTENT_SUFFIX=/(tion|sion|ment|ness|ity|ance|ence|ship|hood|ful|less|ous|ive|able|ible|ical|ally|ly|ize|ise|ify|ing|ed|er|est)$/;
+function wordScore(tokens,i){
+  const core=norm(tokens[i]); const plain=core.replace(/'/g,'');
+  let s=0;
+  if(MEANING.has(core)||MEANING.has(plain)) s+=3;          // changes the meaning directly
+  if(!STOP.has(plain)) s+=2;                                // content word
+  if(core.length>=6) s+=1; else if(core.length>=5) s+=0.5; // longer = usually more specific
+  if(CONTENT_SUFFIX.test(core) && core.length>=5) s+=0.7;   // clear noun/adj/adv/verb morphology
+  if(/\d/.test(core)) s+=1;                                  // numbers, dates, percentages
+  if(isCapMid(tokens,i)) s+=0.5;                            // places, nationalities, brands (person names already removed)
+  return s;
+}
 function pickBlanks(tokens, n){
-  const cand = tokens.map((t,i)=>({i,core:norm(t)})).filter(c=>c.core.length>=3 && /[a-z]/.test(c.core));
-  // shuffle, prefer unique cores
-  for(let i=cand.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [cand[i],cand[j]]=[cand[j],cand[i]]; }
+  const cand = tokens.map((t,i)=>({i,core:norm(t)}))
+    .filter(c=>(c.core.length>=3 || /^\d{2,}$/.test(c.core)) && /^[a-z0-9']+$/.test(c.core) && !isPersonName(tokens,c.i))
+    .map(c=>({...c,score:wordScore(tokens,c.i)+Math.random()*1.8}))   // jitter keeps rounds different
+    .sort((a,b)=>b.score-a.score);
   const used=new Set(), picked=[];
-  for(const c of cand){ if(picked.length>=n) break; if(used.has(c.core)) continue; used.add(c.core); picked.push(c.i); }
+  for(const c of cand){
+    if(picked.length>=n) break;
+    if(used.has(c.core)) continue;
+    if(picked.some(p=>Math.abs(p-c.i)<=1)) continue;
+    used.add(c.core); picked.push(c.i);
+  }
   return picked.sort((a,b)=>a-b);
 }
 function blanksFor(words){
-  let n = BLANKS[S.difficulty];
-  if(S.difficulty==='hard' && words>12) n=4;
-  return Math.max(1, Math.min(n, Math.floor(words/2)));
+  const rnd=(a,b)=>a+Math.floor(Math.random()*(b-a+1));
+  const n = S.difficulty==='easy'?2 : S.difficulty==='normal'?rnd(3,4) : rnd(4,6);
+  return Math.max(1, Math.min(n, Math.floor((words+1)/2)));
 }
 function startGame(){
   S.order = S.sentences.map((_,i)=>i); S.idx=0; S.total=0; S.correct=0; S.log=[];
@@ -446,6 +492,8 @@ function renderCard(){
   const s = S.sentences[S.order[S.idx]];
   S.checked=false; S.hintUsed=false;
   const tokens = s.text.split(/\s+/);
+  S.mode = S.difficulty==='full' ? 'full' : 'blank';
+  if(S.mode==='full') return renderFullCard(s,tokens);
   const idxs = pickBlanks(tokens, blanksFor(tokens.length));
   S.blanks = idxs.map(i=>({i,word:tokens[i],core:norm(tokens[i])}));
   const el=$('sentence'); el.innerHTML='';
@@ -477,8 +525,49 @@ function updateRail(){
   $('scoreNow').textContent = S.total? Math.round(S.correct/S.total*100) : 0;
   $('hitNow').textContent = `${S.correct}/${S.total}`;
 }
+/* ---- Full-sentence (dictation) mode ---- */
+function renderFullCard(s,tokens){
+  S.fullWords = tokens.map(norm).filter(Boolean);
+  const el=$('sentence'); el.innerHTML='';
+  const mask=document.createElement('div'); mask.className='mask'; mask.id='mask';
+  mask.textContent = `${S.fullWords.length} từ · `+tokens.map(t=>'_'.repeat(Math.max(1,norm(t).length))).join('  ');
+  el.append(mask);
+  const ta=document.createElement('textarea'); ta.className='full'; ta.id='fullInput'; ta.placeholder='Nghe rồi gõ lại cả câu…'; ta.autocomplete='off'; ta.spellcheck=false;
+  ta.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); S.checked?next():check(); } });
+  el.append(ta);
+  $('hint').textContent=''; $('feedback').textContent=''; $('feedback').className='feedback';
+  $('checkBtn').hidden=false; $('nextBtn').hidden=true; $('skipBtn').hidden=false; $('hintBtn').disabled=false;
+  $('timeLabel').textContent = s.start!=null ? fmt(s.start)+(s.end?' – '+fmt(s.end):'') : '';
+  updateRail();
+  if(S.videoId && s.start!=null && $('autoPlay').checked) playSeg(s); else stopPlayer();
+  ta.focus();
+}
+/* Word-level alignment (LCS) between expected and typed words; returns which expected words were matched. */
+function alignWords(exp, got){
+  const n=exp.length, m=got.length, dp=Array.from({length:n+1},()=>new Array(m+1).fill(0));
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--) dp[i][j]= exp[i]===got[j] ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j],dp[i][j+1]);
+  const matched=new Array(n).fill(false); let i=0,j=0;
+  while(i<n&&j<m){ if(exp[i]===got[j]){matched[i]=true;i++;j++;} else if(dp[i+1][j]>=dp[i][j+1]) i++; else j++; }
+  return matched;
+}
+function checkFull(){
+  const s=S.sentences[S.order[S.idx]]; const tokens=s.text.split(/\s+/);
+  const given=$('fullInput').value; const got=given.split(/\s+/).map(norm).filter(Boolean);
+  const matched=alignWords(S.fullWords, got);
+  const ok=matched.filter(Boolean).length, total=S.fullWords.length;
+  S.total+=total; S.correct+=ok;
+  $('fullInput').disabled=true; $('mask').remove();
+  const diff=document.createElement('div'); diff.className='diff';
+  let k=0; tokens.forEach(t=>{ const sp=document.createElement('span'); if(norm(t)){ sp.className=matched[k]?'ok':'miss'; k++; } sp.textContent=t; diff.append(sp); });
+  $('sentence').prepend(diff);
+  S.fullWords.forEach((w,wi)=>{ if(!matched[wi]) S.log.push({sentence:s.text, word:w, given:'(thiếu/sai)', ok:false}); });
+  const fb=$('feedback'); fb.textContent = ok===total ? `Chính xác! ${ok}/${total} từ` : `Đúng ${ok}/${total} từ`; fb.className='feedback '+(ok===total?'ok':'bad');
+  $('checkBtn').hidden=true; $('nextBtn').hidden=false; $('skipBtn').hidden=true; $('hintBtn').disabled=true;
+  updateRail(); $('nextBtn').focus();
+}
 function check(){
   if(S.checked) return; S.checked=true;
+  if(S.mode==='full') return checkFull();
   let ok=0;
   S.blanks.forEach(b=>{
     const inp=$('blank-'+b.i); const v=norm(inp.value); const good=v===b.core;
@@ -495,6 +584,7 @@ function check(){
 }
 function skip(){
   if(S.checked) return;
+  if(S.mode==='full'){ $('fullInput').value=''; return check(); }
   S.blanks.forEach(b=>{ const inp=$('blank-'+b.i); inp.value=''; });
   check();
 }
@@ -518,6 +608,11 @@ function finish(){
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function hint(){
   if(S.checked||S.hintUsed) return; S.hintUsed=true;
+  if(S.mode==='full'){
+    const tokens=S.sentences[S.order[S.idx]].text.split(/\s+/);
+    $('hint').textContent='Gợi ý: '+tokens.map(t=>{ const c=t.replace(/^[^A-Za-z0-9']+/,''); return (c[0]||'')+'·'.repeat(Math.max(0,norm(t).length-1)); }).join('  ');
+    return;
+  }
   $('hint').textContent='Gợi ý: '+S.blanks.map(b=>b.display[0]+'·'.repeat(Math.max(0,b.display.length-1))).join('   ');
   S.blanks.forEach(b=>{ const inp=$('blank-'+b.i); if(!inp.value) inp.value=b.display[0]; });
 }
