@@ -465,15 +465,35 @@ function buildSentences(segs){
   let pieces=[];
   const punct = full.match(/[^.!?]+[.!?]+["'”’)]*\s*/g) || [];
   const punctWords = punct.reduce((a,p)=>a+wordsOf(p),0);
-  if(punct.length>=2 && punctWords/punct.length <= 28){
+  const timed = segs.length>3 && segs.every(s=>s.start!=null) && wordsOf(full)/segs.length < 1.5; // word-level timing available
+  if(punct.length>=2 && punctWords/punct.length <= 45){
     let pos=0;
     for(const p of punct){ const idx=full.indexOf(p,pos); pieces.push({text:p.trim(),pos:idx}); pos=idx+p.length; }
+    // leftover tail without final punctuation
+    const tail=full.slice(pos).trim(); if(tail) pieces.push({text:tail,pos:full.indexOf(tail,pos)});
+  }else if(timed){
+    // no usable punctuation: split where the speaker pauses ≥ 0.5 s
+    let cur='',curPos=0;
+    segs.forEach((s,i)=>{ const p=map[i].pos; const prev=segs[i-1]; const gap=prev?s.start-(prev.start+prev.dur):0;
+      if(cur && (gap>=0.5 || wordsOf(cur)>=24)){ pieces.push({text:cur,pos:curPos}); cur=''; }
+      if(!cur){cur=s.text;curPos=p;} else cur+=' '+s.text; });
+    if(cur) pieces.push({text:cur,pos:curPos});
   }else{
     // auto captions without punctuation: chunk by segments ~10-14 words
     let cur='',curPos=0;
     segs.forEach((s,i)=>{ const p=map[i].pos; if(!cur){cur=s.text;curPos=p;} else cur+=' '+s.text; if(wordsOf(cur)>=10){ pieces.push({text:cur,pos:curPos}); cur=''; } });
     if(cur) pieces.push({text:cur,pos:curPos});
   }
+  // long sentences (> 24 words): split at the comma / semicolon / dash nearest the middle, repeatedly
+  const splitLong=p=>{
+    const n=wordsOf(p.text); if(n<=24) return [p];
+    const mid=p.text.length/2; let best=-1,bd=Infinity; const re=/[,;:—–]\s|\s[-–—]\s/g; let m;
+    while((m=re.exec(p.text))){ const cut=m.index+m[0].length; const lw=wordsOf(p.text.slice(0,cut)), rw=n-lw; if(lw<5||rw<5) continue; const d=Math.abs(cut-mid); if(d<bd){bd=d;best=cut;} }
+    if(best<0) return [p];
+    const a={text:p.text.slice(0,best).trim(),pos:p.pos}, b={text:p.text.slice(best).trim(),pos:p.pos+best};
+    return [...splitLong(a),...splitLong(b)];
+  };
+  pieces=pieces.flatMap(splitLong);
   // merge very short pieces into the previous one
   const out=[]; let carry=null;
   for(const p of pieces){
@@ -842,16 +862,42 @@ function wavFromPcm(pcm,sr){
   for(let i=0;i<n;i++){ const s=Math.max(-1,Math.min(1,pcm[i])); v.setInt16(44+i*2, s<0?s*0x8000:s*0x7FFF, true); }
   return new Blob([buf],{type:'audio/wav'});
 }
-function chunkBounds(pcm,sr,target=40,win=5){
-  const frame=Math.floor(sr*0.05); const nf=Math.floor(pcm.length/frame); const rms=new Float32Array(nf);
+/* Find speech regions (RMS above an adaptive floor), merge small gaps, then pack regions into chunks of ≤ 40 s.
+   Silences longer than 3 s are never sent to Whisper (that is where it invents text). Returns [[start,end],...] in seconds. */
+function speechChunks(pcm,sr,maxLen=40){
+  const F=0.05, frame=Math.floor(sr*F), nf=Math.floor(pcm.length/frame); const rms=new Float32Array(nf);
   for(let f=0;f<nf;f++){ let s=0; const o=f*frame; for(let i=0;i<frame;i++){ const x=pcm[o+i]; s+=x*x; } rms[f]=Math.sqrt(s/frame); }
-  const bounds=[0]; const total=pcm.length/sr;
-  for(let t=target;t<total-10;){
-    const f0=Math.max(0,Math.floor((t-win)/0.05)), f1=Math.min(nf-1,Math.floor((t+win)/0.05));
-    let best=f0, bv=Infinity; for(let f=f0;f<=f1;f++){ if(rms[f]<bv){bv=rms[f];best=f;} }
-    const cut=best*0.05; bounds.push(cut); t=cut+target;
+  const sorted=Array.from(rms).sort((a,b)=>a-b); const floor=sorted[Math.floor(nf*0.2)]||0; const peak=sorted[Math.floor(nf*0.95)]||0.05;
+  const thr=Math.max(floor*4, peak*0.08, 0.004);
+  // regions of speech with 0.3 s hangover
+  const regs=[]; let cur=null, quiet=0;
+  for(let f=0;f<nf;f++){
+    if(rms[f]>=thr){ if(!cur) cur={s:f*F,e:(f+1)*F}; else cur.e=(f+1)*F; quiet=0; }
+    else if(cur){ quiet+=F; if(quiet>=0.3){ regs.push(cur); cur=null; quiet=0; } else cur.e=(f+1)*F; }
   }
-  bounds.push(total); return bounds;
+  if(cur) regs.push(cur);
+  // merge gaps < 1.2 s, drop blips < 0.4 s
+  const merged=[]; for(const r of regs){ const last=merged[merged.length-1]; if(last && r.s-last.e<1.2) last.e=r.e; else merged.push({...r}); }
+  const speech=merged.filter(r=>r.e-r.s>=0.4);
+  // pack into chunks
+  const chunks=[]; let c=null;
+  for(const r of speech){
+    if(c && (r.s-c.e>3 || r.e-c.s>maxLen)){ chunks.push(c); c=null; }
+    if(!c) c={s:r.s,e:r.e}; else c.e=r.e;
+    // a single very long region: cut it at its quietest 50 ms inside the last 10 s
+    while(c.e-c.s>maxLen+5){ const f0=Math.floor((c.s+maxLen-10)/F), f1=Math.floor((c.s+maxLen)/F); let best=f1,bv=Infinity; for(let f=f0;f<=f1;f++){ if(rms[f]<bv){bv=rms[f];best=f;} } chunks.push({s:c.s,e:best*F}); c={s:best*F,e:c.e}; }
+  }
+  if(c) chunks.push(c);
+  const total=pcm.length/sr;
+  return chunks.map(x=>[Math.max(0,x.s-0.25),Math.min(total,x.e+0.35)]);
+}
+/* Whisper on silence: repeats a phrase, or packs impossibly many words per second */
+function looksHallucinated(s){
+  const ws=(s.words&&s.words.length?s.words.map(x=>x.w):s.text.split(/\s+/)).map(norm).filter(Boolean);
+  if(ws.length>=6){ let run=1; for(let i=1;i<ws.length;i++){ run = ws[i]===ws[i-1]?run+1:1; if(run>=4) return true; } }
+  const dur=(s.end||0)-(s.start||0); if(dur>2 && ws.length/dur>6) return true;
+  const uniq=new Set(ws).size; if(ws.length>=20 && uniq/ws.length<0.25) return true;
+  return false;
 }
 async function transcribeChunk(workerUrl, blob){
   const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),90000);
@@ -868,17 +914,19 @@ $('whisperBtn').addEventListener('click',async()=>{
   try{
     setAudioStatus('Đang giải mã audio…');
     const {pcm,sr,duration}=await decodeTo16k(curAudio);
-    const bounds=chunkBounds(pcm,sr);
+    const chunks=speechChunks(pcm,sr);
+    if(!chunks.length) throw new Error('Không phát hiện tiếng nói trong file.');
+    const spoken=chunks.reduce((n,[a,b])=>n+(b-a),0);
     const allSegs=[]; let model='';
-    for(let i=0;i<bounds.length-1;i++){
-      const a=Math.floor(bounds[i]*sr), b=Math.floor(bounds[i+1]*sr);
-      setAudioStatus(`Đang nhận dạng đoạn ${i+1}/${bounds.length-1} (${fmt(bounds[i])}–${fmt(bounds[i+1])} / ${fmt(duration)})…`);
+    for(let i=0;i<chunks.length;i++){
+      const [cs,ce]=chunks[i]; const a=Math.floor(cs*sr), b=Math.floor(ce*sr);
+      setAudioStatus(`Đang nhận dạng đoạn ${i+1}/${chunks.length} (${fmt(cs)}–${fmt(ce)}), tổng ${fmt(spoken)} có tiếng nói trong ${fmt(duration)}…`);
       let data=null, lastErr=null;
       for(let attempt=0;attempt<2&&!data;attempt++){ try{ data=await transcribeChunk(w, wavFromPcm(pcm.subarray(a,b),sr)); }catch(e){ lastErr=e; } }
       if(!data) throw new Error(`đoạn ${i+1}: `+(lastErr&&lastErr.message));
-      model=data.model||model; const off=bounds[i];
+      model=data.model||model; const off=cs;
       for(const s of (data.segs||[])){
-        if(s.nsp>0.6||!s.text) continue;
+        if(s.nsp>0.6||!s.text||looksHallucinated(s)) continue;
         const words=(s.words||[]).filter(x=>x.w).map(x=>({w:x.w,s:x.s+off,e:x.e+off}));
         // classic whisper sometimes stamps all words at the segment end: spread them evenly instead
         if(words.length>1 && words.every(x=>x.e===words[0].e)){ const st=s.start+off, en=s.end+off, d=(en-st)/words.length; words.forEach((x,k)=>{ x.s=st+k*d; x.e=st+(k+1)*d; }); }
@@ -887,7 +935,7 @@ $('whisperBtn').addEventListener('click',async()=>{
     }
     if(!allSegs.length) throw new Error('Không nhận ra lời nói trong file.');
     const nWords=allSegs.reduce((n,s)=>n+(s.words.length||s.text.split(/\s+/).length),0);
-    setAudioStatus(`Đã nhận dạng ${nWords} từ trong ${bounds.length-1} đoạn (${model}).`,'ok');
+    setAudioStatus(`Đã nhận dạng ${nWords} từ trong ${chunks.length} đoạn (${model}).`,'ok');
     startAudio(allSegs, curAudio.name.replace(/\.[^.]+$/,''));
   }catch(e){ setAudioStatus('Lỗi: '+(e.name==='AbortError'?'Worker không phản hồi trong 90 giây':e.message),'err'); }
   finally{ $('whisperBtn').disabled=false; }
