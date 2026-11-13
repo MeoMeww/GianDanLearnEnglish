@@ -109,7 +109,6 @@ const UA = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
   "Accept-Language": "en-US,en;q=0.9",
 };
-const API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
 const CLIENTS = [
   { name: "ANDROID", ctx: { clientName: "ANDROID", clientVersion: "20.10.38", androidSdkVersion: 30, hl: "en", gl: "US" }, ua: "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip", idName: 3 },
   { name: "TVHTML5", ctx: { clientName: "TVHTML5_SIMPLY_EMBEDDED_PLAYER", clientVersion: "2.0", hl: "en", gl: "US" }, ua: UA["User-Agent"], idName: 85, embed: true },
@@ -120,7 +119,7 @@ const CLIENTS = [
 async function innertube(v, client) {
   const body = { context: { client: client.ctx }, videoId: v, contentCheckOk: true, racyCheckOk: true };
   if (client.embed) body.context.thirdParty = { embedUrl: "https://www.youtube.com/" };
-  const r = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${API_KEY}&prettyPrint=false`, {
+  const r = await fetch("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", {
     method: "POST",
     headers: { "Content-Type": "application/json", "User-Agent": client.ua, "X-YouTube-Client-Name": String(client.idName), "X-YouTube-Client-Version": client.ctx.clientVersion, "Accept-Language": "en-US,en;q=0.9", "Origin": "https://www.youtube.com" },
     body: JSON.stringify(body),
